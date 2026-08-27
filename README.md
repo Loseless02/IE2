@@ -66,10 +66,14 @@ release is how anyone other than you gets a new version.
 npm run release
 ```
 
-That builds and uploads both installers **and `latest.yml`**. The updater
-compares against `latest.yml`; without it, installed copies never see the
-release no matter what is attached to it. `npm run dist` builds the same files
-without uploading anything.
+That creates the draft release, then builds and uploads both installers **and
+`latest.yml`**. The updater compares against `latest.yml`; without it, installed
+copies never see the release no matter what is attached to it. `npm run dist`
+builds the same files without uploading anything.
+
+4. Open the draft on GitHub, check all three files are attached, and **Publish
+   release**. A draft is invisible to the updater and does not appear on the
+   repository's front page.
 
 Tag the commit to match, so the source and the release agree.
 

@@ -13,3 +13,7 @@ dist-next/
 .idea/
 .DS_Store
 Thumbs.db
+.fordev.md
+
+# Personal notes, not for the repo.
+.fordev.md

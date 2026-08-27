@@ -4,6 +4,9 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.3.0
+- Updates: the browser can now tell you when a new version exists
+
 ## 0.2.0
 
 - Tab groups: named, coloured runs of tabs, made by right-click or by dragging
@@ -17,7 +20,6 @@ file to show "what's new" once after an update, so keep the heading format —
 - Per-site switch for turning blocking off on a page a filter list breaks
 - Wallpapers, themes, a colour picker, and a customise button on the new tab page
 - Translations you can edit inside the browser, and languages you can add yourself
-- Updates: the browser can now tell you when a new version exists
 
 ## 0.1.0
 

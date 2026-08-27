@@ -88,6 +88,10 @@ if (publishing && !process.env.GH_TOKEN) {
   )
 }
 
+// Create the release first, so the two target publishers cannot each create
+// their own and split the assets between them. See scripts/ensure-release.js.
+if (publishing) run('Preparing the release', 'node', ['scripts/ensure-release.js'])
+
 run(
   publishing ? 'Packaging and publishing' : 'Packaging',
   'npx',
