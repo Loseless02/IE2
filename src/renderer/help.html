@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Manual</title>
+    <link rel="stylesheet" href="./home.css" />
+    <link rel="stylesheet" href="./help.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>The Manual</h1>
+        <p class="tagline">
+          Every button, what it actually does, and what it writes down about you.
+        </p>
+      </header>
+
+      <section>
+        <h2>Toolbar</h2>
+        <table class="ref">
+          <tbody>
+            <tr>
+              <td class="glyph">‹ ›</td>
+              <td>
+                <strong>Back / Forward</strong>
+                <span>Navigation history for this tab. Greyed out when there is nowhere to go.</span>
+              </td>
+              <td class="keys">Alt+←&nbsp;/&nbsp;Alt+→</td>
+            </tr>
+            <tr>
+              <td class="glyph">↻</td>
+              <td>
+                <strong>Reload</strong>
+                <span>Becomes <em>×</em> (Stop) while a page is loading.</span>
+              </td>
+              <td class="keys">Ctrl+R</td>
+            </tr>
+            <tr>
+              <td class="glyph">⭳</td>
+              <td>
+                <strong>Install this site as an app</strong>
+                <span>
+                  Appears only for sites that declare a web manifest — YouTube, Spotify and the
+                  like. Puts a shortcut on your desktop with the site's own icon; opening it gives
+                  that site its own window with no tabs and no address bar. It shares your session,
+                  so you stay signed in, and ads are still blocked.
+                </span>
+              </td>
+              <td class="keys">—</td>
+            </tr>
+            <tr>
+              <td class="glyph">☆</td>
+              <td>
+                <strong>Bookmark</strong>
+                <span>Turns gold when saved. Bookmarks survive <em>Forget everything</em>.</span>
+              </td>
+              <td class="keys">Ctrl+D</td>
+            </tr>
+            <tr>
+              <td class="glyph">↓</td>
+              <td>
+                <strong>Downloads</strong>
+                <span>
+                  Opens the downloads panel: live progress, Cancel while running, and
+                  <em>Show in folder</em> once finished. The badge counts active transfers.
+                </span>
+              </td>
+              <td class="keys">—</td>
+            </tr>
+            <tr>
+              <td class="glyph">🛡</td>
+              <td>
+                <strong>Shield</strong>
+                <span>
+                  Opens the blocking panel: an on/off switch, counts for this page, this session
+                  and all time, and the domains that tried hardest to reach you.
+                </span>
+              </td>
+              <td class="keys">—</td>
+            </tr>
+            <tr>
+              <td class="glyph">IE6</td>
+              <td>
+                <strong>Compatibility Mode</strong>
+                <span>
+                  Really does claim to be <code>MSIE 6.0; Windows NT 5.1</code> and reloads, so
+                  sites serve whatever they keep for ancient browsers. Then applies Comic Sans,
+                  blue underlined links, bevelled buttons and pixelated images. Sites will break.
+                  That is the feature. Hide this button in Settings → Appearance.
+                </span>
+              </td>
+              <td class="keys">—</td>
+            </tr>
+            <tr>
+              <td class="glyph">○</td>
+              <td>
+                <strong>Amnesia tab</strong>
+                <span>Opens a tab that is never written down. See the table below.</span>
+              </td>
+              <td class="keys">Ctrl+Shift+N</td>
+            </tr>
+            <tr>
+              <td class="glyph">⚙</td>
+              <td>
+                <strong>Settings</strong>
+                <span>Search engine, appearance, memory, shields, privacy, downloads.</span>
+              </td>
+              <td class="keys">—</td>
+            </tr>
+            <tr>
+              <td class="glyph">≡</td>
+              <td>
+                <strong>DevTools</strong>
+                <span>
+                  Hidden by default — turn it on in Settings → Appearance. F12 works either way.
+                </span>
+              </td>
+              <td class="keys">F12</td>
+            </tr>
+            <tr>
+              <td class="glyph">?</td>
+              <td><strong>This page</strong><span>You found it. Well done.</span></td>
+              <td class="keys">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Command palette</h2>
+        <p class="prose">
+          <strong>Ctrl+K</strong> opens a search box over everything the browser can do. Type a few
+          letters — they need not be next to each other, so <code>nwtb</code> finds
+          <em>New tab</em> — then Enter. With nothing typed it shows your other open tabs first,
+          then tabs you recently closed, then the commands.
+        </p>
+        <table class="ref">
+          <tbody>
+            <tr>
+              <td class="glyph tag">Switch to</td>
+              <td><span>Jump to any open tab by its title. Faster than hunting the strip when tabs have shrunk to favicons.</span></td>
+              <td class="keys">Ctrl+K</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Reopen</td>
+              <td>
+                <span>
+                  The last 25 tabs you closed, newest first. Amnesia tabs are never listed —
+                  an undo list that could resurrect them would be a record that they existed.
+                </span>
+              </td>
+              <td class="keys">Ctrl+Shift+T</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Commands</td>
+              <td><span>New tab, amnesia tab, bookmark, blocking, Compatibility Mode, install this site, settings, manual, downloads, DevTools.</span></td>
+              <td class="keys">Enter</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Fallback</td>
+              <td><span>If nothing matches what you typed, Enter searches the web for it.</span></td>
+              <td class="keys">Enter</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Tabs</h2>
+        <table class="ref">
+          <tbody>
+            <tr>
+              <td class="glyph tag">Resize</td>
+              <td>
+                <span>
+                  Tabs shrink as you open more: full, then close-button-only on the active tab,
+                  then favicon only. Past that the strip scrolls and keeps the active tab in view.
+                </span>
+              </td>
+              <td class="keys">—</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Reorder</td>
+              <td><span>Drag a tab sideways along the strip.</span></td>
+              <td class="keys">Drag</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Tear out</td>
+              <td>
+                <span>
+                  Drag a tab downwards, away from the strip, and release: it opens in its own
+                  window and closes here. Amnesia tabs refuse — moving one to a new window would
+                  put it back in the recording session.
+                </span>
+              </td>
+              <td class="keys">Drag down</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Split view</td>
+              <td>
+                <span>
+                  Two tabs side by side in one window. The tab you are on is the left pane, so
+                  switching tabs changes the left side and leaves the companion in place.
+                  Right-click a tab and choose <em>Show beside the current tab</em>, or press
+                  Ctrl+Shift+E to pair with the neighbouring tab. Both tabs get an underline in the
+                  strip. Closing either pane, or switching to the companion, ends the split.
+                  Widen a pane from the command palette.
+                </span>
+              </td>
+              <td class="keys">Ctrl+Shift+E</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Right-click</td>
+              <td>
+                <span>
+                  Reload, duplicate, open in a new window, copy address, open in your default
+                  browser, close, close others, close to the right.
+                </span>
+              </td>
+              <td class="keys">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>The omnibox</h2>
+        <p class="prose">
+          Type anything. A hostname goes straight there; anything else goes to your search engine
+          — DuckDuckGo unless you changed it in Settings → Search engine, where there are ten to
+          pick from. A new tab puts the caret here already, so you can just start typing.
+        </p>
+        <table class="ref">
+          <tbody>
+            <tr>
+              <td class="glyph tag">Go to<br />Search</td>
+              <td><span>What pressing Enter will do. The label names your chosen engine.</span></td>
+              <td class="keys">Enter</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Visited</td>
+              <td><span>Ordinary history: matches on page title and URL.</span></td>
+              <td class="keys">↑ ↓</td>
+            </tr>
+            <tr>
+              <td class="glyph tag">In page text</td>
+              <td>
+                <strong>The reason this browser exists.</strong>
+                <span>
+                  Matches the <em>body text</em> of pages you have actually read — not the title,
+                  not the URL. Type a phrase you half-remember from an article and it comes back,
+                  with the matching words highlighted. No mainstream browser does this.
+                </span>
+              </td>
+              <td class="keys">↑ ↓</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Right-clicking a page</h2>
+        <p class="prose">
+          Links offer <em>open in new tab</em>, <em>open in amnesia tab</em>, <em>open in new
+          window</em> and <em>copy link address</em>. Images add open, copy address and save.
+          Selected text offers copy and a search for it. Anywhere else gives back, forward, reload
+          and inspect.
+        </p>
+      </section>
+
+      <section>
+        <h2>What gets written down</h2>
+        <p class="prose">
+          Everything lives in one SQLite file on your machine. Nothing is uploaded anywhere,
+          because there is nowhere to upload it to.
+        </p>
+        <table class="ref matrix">
+          <thead>
+            <tr>
+              <th>Situation</th>
+              <th>History</th>
+              <th>Full page text</th>
+              <th>Cookies</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Normal tab</td>
+              <td class="yes">recorded</td>
+              <td class="yes">captured</td>
+              <td class="yes">kept</td>
+            </tr>
+            <tr>
+              <td>Amnesia tab</td>
+              <td class="no">never</td>
+              <td class="no">never</td>
+              <td class="no">gone on close</td>
+            </tr>
+            <tr>
+              <td>Login / checkout / banking pages</td>
+              <td class="yes">recorded</td>
+              <td class="no">skipped</td>
+              <td class="yes">kept</td>
+            </tr>
+            <tr>
+              <td>Domains on your never-remember list</td>
+              <td class="no">never</td>
+              <td class="no">never</td>
+              <td class="yes">kept</td>
+            </tr>
+            <tr>
+              <td>With “Record history” off</td>
+              <td class="no">never</td>
+              <td class="no">never</td>
+              <td class="yes">kept</td>
+            </tr>
+            <tr>
+              <td>This page and the new tab page</td>
+              <td class="no">never</td>
+              <td class="no">never</td>
+              <td class="no">n/a</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="prose warn">
+          Honest limitation: the login/checkout exclusion is pattern matching on hostnames and
+          paths — <code>accounts.*</code>, <code>/login</code>, <code>/checkout</code> and friends.
+          A logged-in dashboard on an ordinary URL <strong>will</strong> have its text captured.
+          Use an amnesia tab, or add the domain to the never-remember list in Settings → Memory.
+          Camera, microphone and location are denied to every site with no prompt, because the
+          prompt UI does not exist yet.
+        </p>
+      </section>
+
+      <section>
+        <h2>Settings</h2>
+        <table class="ref">
+          <tbody>
+            <tr>
+              <td class="glyph tag">Get started</td>
+              <td><span>What opens on startup, and which page counts as home.</span></td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Search</td>
+              <td>
+                <span>
+                  DuckDuckGo, Google, Brave, Bing, Yandex, Yahoo, Startpage, Ecosia, Mojeek or
+                  Wikipedia. Omnibox suggestions can be switched off entirely.
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Appearance</td>
+              <td>
+                <span>
+                  Seven accent colours, tab width, animations on or off, website scrollbars
+                  restyled to match the browser, and which toolbar buttons are shown.
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Memory</td>
+              <td>
+                <span>
+                  Turn history and text capture off, decide whether amnesia tabs count blocked
+                  requests, see what is stored, and manage the never-remember list — including
+                  wiping one site's history on demand.
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td class="glyph tag">Privacy</td>
+              <td>
+                <span>
+                  <em>Forget everything</em>, with an option to clear cookies and sign you out of
+                  sites at the same time. Bookmarks are always kept.
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Keyboard</h2>
+        <table class="ref keys-table">
+          <tbody>
+            <tr><td class="keys">Ctrl+K</td><td><span>Command palette</span></td></tr>
+            <tr><td class="keys">Ctrl+Shift+T</td><td><span>Reopen the last closed tab</span></td></tr>
+            <tr><td class="keys">Ctrl+T</td><td><span>New tab, caret in the omnibox</span></td></tr>
+            <tr><td class="keys">Ctrl+Shift+N</td><td><span>New amnesia tab</span></td></tr>
+            <tr><td class="keys">Ctrl+W</td><td><span>Close tab</span></td></tr>
+            <tr><td class="keys">Ctrl+L</td><td><span>Focus the omnibox</span></td></tr>
+            <tr><td class="keys">Ctrl+R</td><td><span>Reload</span></td></tr>
+            <tr><td class="keys">Ctrl+D</td><td><span>Bookmark this page</span></td></tr>
+            <tr><td class="keys">Alt+← / Alt+→</td><td><span>Back and forward</span></td></tr>
+            <tr><td class="keys">F12</td><td><span>DevTools</span></td></tr>
+            <tr><td class="keys">Middle-click a tab</td><td><span>Close it</span></td></tr>
+            <tr><td class="keys">Esc</td><td><span>Close any open panel</span></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Internal pages</h2>
+        <table class="ref">
+          <tbody>
+            <tr>
+              <td class="glyph tag">ie2://home</td>
+              <td>
+                <span>
+                  New tab page: recall search over everything you have read, statistics about your
+                  reading habits, and recent visits.
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td class="glyph tag">ie2://settings</td>
+              <td><span>Everything above, plus reset. Reachable from the ⚙ button.</span></td>
+            </tr>
+            <tr>
+              <td class="glyph tag">ie2://help</td>
+              <td><span>This manual.</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Sleeping tabs</h2>
+        <p>
+          A tab left alone for a while has its page thrown away and its memory
+          handed back. The tab stays where it is, marked with a ring around its
+          favicon, and reloads when you return to it.
+        </p>
+        <p>
+          Its Back and Forward history comes back with it — the whole list, at the
+          same position. The page is genuinely reloaded, so it returns scrolled to
+          the top rather than where you left it.
+        </p>
+        <p>
+          The tab you are looking at, its split-view companion and anything playing
+          sound are never touched. Turn it off, or change the delay, in
+          Settings → Performance.
+        </p>
+      </section>
+
+      <section>
+        <h2>Pinned tabs and groups</h2>
+        <p>
+          Right-click any tab to pin it. Pinned tabs shrink to their favicon, sit at
+          the front of the strip, and come back when the browser is reopened — even
+          when it is set to start with a new tab.
+        </p>
+        <p>
+          The same menu files tabs into a group. A group is a coloured, named run of
+          adjacent tabs; click its chip to rename it, recolour it, add a tab to it,
+          ungroup it or close it in one go. Dragging a tab in among a group's tabs
+          joins it; dragging it clear of them leaves.
+        </p>
+        <p>
+          Ctrl-click tabs to select several at once, or shift-click to take the run
+          between two. Whatever the tab menu does next, it does to all of them.
+        </p>
+        <p class="keys">
+          <b>Shift+Alt+C</b> new tab in the current group ·
+          <b>Shift+Alt+W</b> close the current group
+        </p>
+      </section>
+
+
+      <footer>
+        <span>IE2. It remembers everything. You were told.</span>
+      </footer>
+    </main>
+  </body>
+</html>

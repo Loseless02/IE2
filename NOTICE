@@ -1,0 +1,24 @@
+IE2
+Copyright 2026 Loseless02
+
+This product includes software developed as IE2
+(https://github.com/Loseless02/IE2).
+
+Licensed under the Apache License, Version 2.0. See LICENSE for the full terms.
+
+---
+
+IE2 is not Internet Explorer. It is not affiliated with, endorsed by, or
+connected to Microsoft. "Internet Explorer" is a trademark of Microsoft
+Corporation and is referred to only to identify the browser this project is
+named in tribute to.
+
+---
+
+The wallpapers under src/renderer/public/wallpapers/ are NOT covered by the
+Apache License and are not the work of this project. They were taken from
+wallpapercave.com and no ownership is claimed over them. See the README beside
+them for details.
+
+This product bundles third-party software with its own licence terms, including
+Chromium, Electron, SQLite and the Ghostery adblocker and its filter lists.

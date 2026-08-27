@@ -1,0 +1,58 @@
+appId: com.internetexplorer2.browser
+productName: IE2
+copyright: Copyright 2026 Loseless02
+
+directories:
+  output: dist
+  buildResources: build
+
+# Where the browser looks for updates, and where `npm run release` puts them.
+# electron-builder also writes latest.yml beside the installer; without that
+# file the updater has nothing to compare against, so it must be uploaded too.
+publish:
+  provider: github
+  owner: Loseless02
+  repo: IE2
+
+# Only the compiled output ships. Sources, configs and the dev toolchain stay
+# out of the package; production dependencies are added automatically.
+files:
+  - out/**/*
+  - package.json
+  # The Apache licence asks that both travel with binary distributions too,
+  # not only with the source.
+  - LICENSE
+  - NOTICE
+  # Read at runtime for the "what's new" card, so it has to be in the package.
+  - CHANGELOG.md
+  - '!**/*.map'
+
+asar: true
+
+win:
+  target:
+    # Installer for normal use, and a single portable exe for quick testing.
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.ico
+  # Unsigned. Windows SmartScreen will warn on first run — see README.
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: IE2
+  # Hyphens, not spaces: GitHub rewrites spaces in asset names, and
+  # electron-builder writes the rewritten name into latest.yml. Naming the file
+  # this way from the start means what is built, what is uploaded and what the
+  # updater asks for are all the same string.
+  artifactName: ${productName}-Setup-${version}.${ext}
+  uninstallDisplayName: IE2
+
+portable:
+  artifactName: ${productName}-Portable-${version}.${ext}

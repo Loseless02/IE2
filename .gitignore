@@ -1,0 +1,15 @@
+node_modules/
+out/
+dist/
+dist-next/
+
+.github/workflows
+
+*.tsbuildinfo
+*.log
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Bookmarks</title>
+    <link rel="stylesheet" href="./home.css" />
+    <link rel="stylesheet" href="./help.css" />
+    <link rel="stylesheet" href="./translate.css" />
+    <link rel="stylesheet" href="./bookmarks.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Bookmarks</h1>
+        <p class="tagline">
+          Everything you saved, and everything that came across from another browser.
+        </p>
+      </header>
+
+      <div id="bar">
+        <input id="filter" type="text" spellcheck="false" placeholder="Search bookmarks" />
+        <span id="count"></span>
+      </div>
+
+      <div id="list"></div>
+    </main>
+    <script type="module" src="./bookmarks.ts"></script>
+  </body>
+</html>

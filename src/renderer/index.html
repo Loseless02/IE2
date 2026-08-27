@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>IE2</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="tabstrip">
+      <div id="tabs"></div>
+      <button id="new-tab" title="New tab (Ctrl+T)">+</button>
+    </div>
+
+    <div id="toolbar">
+      <button id="back" title="Back"></button>
+      <button id="forward" title="Forward"></button>
+      <button id="reload" title="Reload"></button>
+      <button id="home" title="Home"></button>
+      <div id="omnibox-wrap">
+        <span id="badge" hidden></span>
+        <input
+          id="omnibox"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="Search the web — or anything you have already read"
+        />
+        <button id="install" title="Install this site as an app" hidden></button>
+        <button id="bookmark" title="Bookmark this page"></button>
+      </div>
+      <button id="copy-link" title="Copy this page's address"></button>
+      <button id="screenshot" title="Screenshot (Ctrl+Shift+S)"></button>
+      <button id="pip" title="Picture in picture (Ctrl+Shift+I)"></button>
+      <button id="split" title="Split view (Ctrl+Shift+E)"></button>
+      <button id="qr" title="QR code for this page"></button>
+      <button id="media" title="What is playing"></button>
+      <button id="bookmarks" title="Bookmarks"></button>
+      <button id="downloads" title="Downloads">
+        <span id="dl-count" hidden></span>
+      </button>
+      <button id="shield" title="Blocking ads and trackers"></button>
+      <button id="compat" title="Compatibility Mode — pretend it is 2001">IE6</button>
+      <button id="amnesia" title="Amnesia tab (Ctrl+Shift+N)"></button>
+      <button id="devtools" title="DevTools"></button>
+      <button id="settings" title="Settings"></button>
+      <button id="help" title="What does any of this do?"></button>
+    </div>
+
+    <div id="dropdown" hidden>
+      <div id="suggestions"></div>
+      <div id="dropdown-footer">IE2 remembers every page you read. On purpose.</div>
+    </div>
+
+    <div id="downloads-panel" hidden>
+      <div class="panel-head">
+        <span>Downloads</span>
+        <button id="dl-clear">Clear finished</button>
+      </div>
+      <div id="dl-list"></div>
+    </div>
+
+    <!-- A tab group's own controls, opened from its chip in the strip. -->
+    <div id="group-panel" hidden>
+      <input id="group-name" type="text" placeholder="Name this group" maxlength="40" />
+      <div id="group-colours"></div>
+      <div class="group-actions">
+        <button id="group-new-tab"><span>New tab in group</span><kbd>Shift+Alt+C</kbd></button>
+        <button id="group-ungroup"><span>Ungroup</span></button>
+        <button id="group-close" class="danger"><span>Close group</span><kbd>Shift+Alt+W</kbd></button>
+      </div>
+    </div>
+
+    <!-- Brief confirmations: copied, saved, nothing to float. -->
+    <div id="toast" hidden></div>
+
+    <div id="palette" hidden>
+      <input
+        id="palette-input"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Type a command, or search your open tabs"
+      />
+      <div id="palette-list"></div>
+      <div id="palette-footer">
+        <span>↑↓ to move · Enter to run · Esc to close</span>
+      </div>
+    </div>
+
+    <div id="qr-panel" hidden>
+      <canvas id="qr-canvas" width="220" height="220"></canvas>
+      <div id="qr-url"></div>
+      <div class="qr-foot">
+        <span id="qr-hint"></span>
+        <button id="qr-save" class="primary"></button>
+      </div>
+    </div>
+
+    <div id="media-panel" hidden>
+      <div class="media-row">
+        <img id="media-art" alt="" hidden />
+        <div class="media-meta">
+          <div id="media-title"></div>
+          <div id="media-artist"></div>
+        </div>
+      </div>
+      <div id="media-bar"><span id="media-fill"></span></div>
+      <div class="media-controls">
+        <span id="media-time"></span>
+        <span class="spacer"></span>
+        <button id="media-back" title="Back 10 seconds"></button>
+        <button id="media-toggle" class="primary"></button>
+        <button id="media-forward" title="Forward 10 seconds"></button>
+        <button id="media-mute" title="Mute"></button>
+      </div>
+      <div id="media-empty" hidden></div>
+    </div>
+
+    <div id="bookmarks-panel" hidden>
+      <div class="panel-head">
+        <span>Bookmarks</span>
+        <button id="bm-manage">Manage all</button>
+      </div>
+      <div id="bm-list"></div>
+    </div>
+
+    <div id="shot-panel" hidden>
+      <div class="panel-head">
+        <span>Screenshot copied</span>
+        <button id="shot-close">Close</button>
+      </div>
+      <img id="shot-preview" alt="Screenshot preview" />
+      <div id="shot-foot">
+        <span id="shot-info"></span>
+        <button id="shot-save" class="primary">Download PNG</button>
+      </div>
+    </div>
+
+    <div id="shield-panel" hidden>
+      <div class="panel-head">
+        <span>Blocking</span>
+        <button id="shield-toggle" class="switch">
+          <span class="dot"></span><span id="shield-toggle-label">On</span>
+        </button>
+      </div>
+      <!-- Per-site switch, for the pages a filter list breaks. -->
+      <div id="shield-site" hidden>
+        <span id="shield-site-name"></span>
+        <button id="shield-site-toggle"></button>
+      </div>
+      <div id="shield-counts"></div>
+      <div id="shield-top"></div>
+      <div id="shield-footer"></div>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

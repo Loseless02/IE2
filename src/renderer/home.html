@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: https: ie2:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>New Tab</title>
+    <link rel="stylesheet" href="./home.css" />
+  </head>
+  <body>
+    <!-- Painted behind everything: a colour, or the chosen wallpaper. -->
+    <div id="wallpaper"></div>
+    <div id="wallpaper-dim"></div>
+
+    <!-- Customising the page you are looking at belongs on that page, not four
+         clicks away in Settings. -->
+    <button id="customise" title="Customise this page"></button>
+
+    <div id="sheet" hidden>
+      <div class="sheet-head">
+        <span>Customise</span>
+        <button id="sheet-close" title="Close"></button>
+      </div>
+      <div class="sheet-body">
+        <label class="field">
+          <span>Title</span>
+          <input id="opt-title" type="text" spellcheck="false" />
+        </label>
+
+        <div class="field">
+          <span>Background</span>
+          <div class="segmented" id="opt-background">
+            <button data-value="theme">Theme</button>
+            <button data-value="colour">Colour</button>
+            <button data-value="builtin">Built in</button>
+            <button data-value="image">Image</button>
+            <button data-value="folder">Folder</button>
+          </div>
+        </div>
+
+        <label class="field" id="row-colour">
+          <span>Colour</span>
+          <input id="opt-colour" type="color" />
+        </label>
+
+        <div class="field wide" id="row-builtin">
+          <span>Wallpaper</span>
+          <div class="wallpaper-grid" id="opt-builtin"></div>
+        </div>
+
+        <div class="field" id="row-image">
+          <span>Image</span>
+          <button id="opt-pick-image">Choose a file</button>
+        </div>
+
+        <div class="field" id="row-folder">
+          <span>Folder</span>
+          <button id="opt-pick-folder">Choose a folder</button>
+        </div>
+
+        <label class="field" id="row-fit">
+          <span>Fit</span>
+          <select id="opt-fit"></select>
+        </label>
+
+        <label class="field" id="row-position">
+          <span>Position</span>
+          <select id="opt-position">
+            <option value="center">Centre</option>
+            <option value="top">Top</option>
+            <option value="bottom">Bottom</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
+
+        <label class="field" id="row-dim">
+          <span>Dim</span>
+          <input id="opt-dim" type="range" min="0" max="90" step="5" />
+        </label>
+
+        <div class="field">
+          <span>Cards</span>
+          <div class="segmented" id="opt-card">
+            <button data-value="solid">Solid</button>
+            <button data-value="glass">Glass</button>
+          </div>
+        </div>
+
+        <div class="sheet-section">Show</div>
+        <label class="check"><input type="checkbox" id="opt-search" /><span>Recall search</span></label>
+        <label class="check"><input type="checkbox" id="opt-stats" /><span>Statistics</span></label>
+        <label class="check"><input type="checkbox" id="opt-recent" /><span>Recently read</span></label>
+        <label class="check"><input type="checkbox" id="opt-verdict" /><span>Verdict line</span></label>
+        <label class="check"><input type="checkbox" id="opt-clock" /><span>Clock</span></label>
+      </div>
+    </div>
+
+    <main>
+      <div id="clock" hidden>
+        <div id="clock-time"></div>
+        <div id="clock-date"></div>
+      </div>
+      <header>
+        <h1>IE2</h1>
+        <p class="tagline">The browser that remembers. It was never asked to.</p>
+      </header>
+
+      <section id="recall">
+        <input
+          id="recall-input"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="Search the text of every page you have read"
+        />
+        <div id="recall-results"></div>
+      </section>
+
+      <section id="stats"></section>
+
+      <section id="recent">
+        <h2>Recently, against your better judgement</h2>
+        <div id="recent-list"></div>
+      </section>
+
+      <footer>
+        <span id="verdict"></span>
+        <button id="forget-all">Forget everything</button>
+      </footer>
+    </main>
+    <script type="module" src="./home.ts"></script>
+  </body>
+</html>

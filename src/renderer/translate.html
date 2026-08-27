@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Translate</title>
+    <link rel="stylesheet" href="./home.css" />
+    <link rel="stylesheet" href="./help.css" />
+    <link rel="stylesheet" href="./translate.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Translate</h1>
+        <p class="tagline">
+          Type your wording on the right. It saves as you go and applies straight away — no
+          rebuilding, no code.
+        </p>
+      </header>
+
+      <div id="bar">
+        <select id="language"></select>
+        <input id="filter" type="text" spellcheck="false" placeholder="Filter by text or key" />
+        <label class="only-missing">
+          <input id="only-missing" type="checkbox" />
+          <span>Only untranslated</span>
+        </label>
+        <div id="progress"><span id="progress-fill"></span></div>
+        <span id="progress-text"></span>
+      </div>
+
+      <div id="rows"></div>
+
+      <footer>
+        <span id="status"></span>
+        <span class="spacer"></span>
+        <button id="import">Import file…</button>
+        <button id="export">Export file…</button>
+      </footer>
+    </main>
+    <script type="module" src="./translate.ts"></script>
+  </body>
+</html>

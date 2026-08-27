@@ -1,0 +1,172 @@
+/* Layered on home.css (palette, frame) and help.css (prose, headings). */
+
+main {
+  max-width: 1000px;
+}
+
+#bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 12px 0;
+  background: var(--bg);
+}
+
+#bar select,
+#bar input[type='text'] {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+#bar input[type='text'] {
+  flex: 1;
+  min-width: 0;
+}
+
+#bar select:focus,
+#bar input[type='text']:focus {
+  border-color: var(--accent);
+}
+
+.only-missing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.only-missing input {
+  accent-color: var(--accent);
+}
+
+#progress {
+  flex: none;
+  width: 90px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+#progress-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+#progress-text {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#rows h2 {
+  margin: 22px 0 8px;
+}
+
+/* English on the left, your wording on the right. */
+.trow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.trow .source {
+  min-width: 0;
+}
+
+.trow .english {
+  overflow-wrap: anywhere;
+}
+
+.trow code {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+}
+
+.trow textarea {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  outline: none;
+  resize: vertical;
+  overflow: hidden;
+}
+
+.trow textarea:focus {
+  border-color: var(--accent);
+}
+
+/* Saving state, so it is obvious the typing is being kept. */
+.trow textarea.pending {
+  border-color: var(--mark);
+}
+
+.trow textarea.saved {
+  border-color: #4bbf7a;
+}
+
+footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: sticky;
+  bottom: 0;
+  padding: 12px 0;
+  background: var(--bg);
+}
+
+footer .spacer {
+  flex: 1;
+}
+
+footer button {
+  flex: none;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: default;
+}
+
+footer button:hover {
+  background: var(--hover);
+}
+
+#status {
+  color: var(--text-dim);
+  font-size: 12px;
+}

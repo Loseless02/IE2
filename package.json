@@ -1,0 +1,41 @@
+{
+  "name": "internet-explorer-2",
+  "version": "0.2.0",
+  "description": "A browser that remembers every page you read",
+  "main": "./out/main/index.js",
+  "author": "Loseless02",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Loseless02/IE2.git"
+  },
+  "homepage": "https://github.com/Loseless02/IE2#readme",
+  "bugs": {
+    "url": "https://github.com/Loseless02/IE2/issues"
+  },
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "icon": "node scripts/make-icon.js build",
+    "dist": "node scripts/build.js",
+    "dist:dir": "electron-vite build && electron-builder --win --dir",
+    "dist:raw": "electron-vite build && electron-builder --win",
+    "release": "node scripts/build.js --publish"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.3",
+    "vite": "^5.4.11"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.18.2",
+    "electron-updater": "^6.8.9",
+    "qrcode-generator": "^2.0.4"
+  }
+}
