@@ -145,3 +145,31 @@
   color: var(--text-dim);
   font-size: 12.5px;
 }
+
+/* --- motion ---------------------------------------------------------------
+   Layered on home.css, which supplies the no-motion switch. */
+
+.bookmark {
+  animation: hit-in 200ms ease backwards;
+  transition: background 140ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bookmark:nth-child(1) { animation-delay: 0ms; }
+.bookmark:nth-child(2) { animation-delay: 25ms; }
+.bookmark:nth-child(3) { animation-delay: 50ms; }
+.bookmark:nth-child(4) { animation-delay: 75ms; }
+.bookmark:nth-child(n + 5) { animation-delay: 100ms; }
+
+.bookmark:hover {
+  transform: translateX(3px);
+}
+
+/* Removing one should look like removing it, not like a redraw. */
+.bookmark .remove {
+  transition: background 140ms ease, color 140ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bookmark .remove:hover {
+  transform: rotate(90deg);
+  color: #ff8080;
+}

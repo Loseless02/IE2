@@ -36,6 +36,10 @@ if (window.location.protocol === 'ie2:') {
     resetSettings: (): Promise<Settings> => ipcRenderer.invoke('internal:settings-reset'),
     restart: (): Promise<void> => ipcRenderer.invoke('internal:restart'),
 
+    /** Whether Windows currently opens links with IE2, and asking to change it. */
+    isDefaultBrowser: (): Promise<boolean> => ipcRenderer.invoke('internal:default-browser'),
+    makeDefaultBrowser: (): Promise<boolean> => ipcRenderer.invoke('internal:make-default'),
+
     /** The newest section of the changelog that shipped with this build. */
     changelog: (): Promise<{ version: string; lines: string[] }> =>
       ipcRenderer.invoke('internal:changelog'),
@@ -107,6 +111,8 @@ export type InternalApi = {
   setSetting: (key: string, value: unknown) => Promise<Settings>
   resetSettings: () => Promise<Settings>
   restart: () => Promise<void>
+  isDefaultBrowser: () => Promise<boolean>
+  makeDefaultBrowser: () => Promise<boolean>
   changelog: () => Promise<{ version: string; lines: string[] }>
   updateState: () => Promise<UpdateState>
   checkForUpdate: () => Promise<UpdateState>

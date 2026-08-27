@@ -5,6 +5,7 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "types": ["node", "electron-vite/node"],
     "strict": true,
     "skipLibCheck": true,

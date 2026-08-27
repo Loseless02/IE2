@@ -169,7 +169,7 @@ function updateRow(): HTMLElement {
   const paint = (state: UpdateState): void => {
     const labels: Record<UpdateState['status'], string> = {
       idle: t('Check for updates'),
-      checking: t('Checking…'),
+      checking: `${t('Checking')}…`,
       current: t('Check again'),
       available: `${t('Download')} ${state.version}`,
       downloading: `${state.progress}%`,
@@ -205,12 +205,52 @@ function updateRow(): HTMLElement {
     if (state.status === 'available') return void window.ie2.downloadUpdate()
     if (state.status === 'ready') return void window.ie2.installUpdate()
 
+    // Say so immediately. The check can take a few seconds against GitHub, and
+    // a button that does nothing visible reads as a broken button.
+    paint({ ...state, status: 'checking' })
     paint(await window.ie2.checkForUpdate())
   })
 
   // Progress arrives as it happens, so the row is live rather than a snapshot.
   window.ie2.onUpdateState(paint)
   void window.ie2.updateState().then(paint)
+
+  return wrap
+}
+
+/**
+ * Whether Windows opens links with IE2.
+ *
+ * The button cannot simply set it: Windows 10 and 11 refuse to let a program
+ * make itself the default, so it registers what it can and opens the Settings
+ * page where the choice actually lives. Saying that plainly beats a button that
+ * appears to do nothing.
+ */
+function defaultBrowserRow(): HTMLElement {
+  const status = document.createElement('span')
+  status.className = 'static-value'
+
+  const button = document.createElement('button')
+  button.className = 'action'
+  button.textContent = t('Make IE2 the default')
+
+  const wrap = document.createElement('div')
+  wrap.className = 'inline-control'
+  wrap.append(status, button)
+
+  const paint = (isDefault: boolean): void => {
+    status.textContent = isDefault ? t('Currently the default') : ''
+    button.hidden = isDefault
+  }
+
+  button.addEventListener('click', async () => {
+    await window.ie2.makeDefaultBrowser()
+    // Windows has to be asked by the user, so re-check when they come back.
+    window.setTimeout(async () => paint(await window.ie2.isDefaultBrowser()), 1500)
+  })
+
+  void window.ie2.isDefaultBrowser().then(paint)
+  window.addEventListener('focus', async () => paint(await window.ie2.isDefaultBrowser()))
 
   return wrap
 }
@@ -295,19 +335,33 @@ function accentPicker(): HTMLElement {
       })
 
       if (saved) {
-        swatch.addEventListener('contextmenu', async (event) => {
-          event.preventDefault()
+        const forget = async (): Promise<void> => {
           settings = await window.ie2.setSetting(
             'savedAccents',
             settings.savedAccents.filter((c) => c !== hex)
           )
           renderSwatches()
+        }
+
+        // A visible cross, because right-click was the only way to remove one
+        // and nothing on screen said so.
+        const remove = document.createElement('span')
+        remove.className = 'swatch-remove'
+        remove.textContent = '×'
+        remove.title = t('Remove this colour')
+        remove.style.color = contrastOn(hex)
+        remove.addEventListener('click', (event) => {
+          // Otherwise the click underneath also selects the colour being removed.
+          event.stopPropagation()
+          void forget()
         })
 
-        const mark = document.createElement('span')
-        mark.className = 'saved-dot'
-        mark.style.background = contrastOn(hex)
-        swatch.append(mark)
+        swatch.addEventListener('contextmenu', (event) => {
+          event.preventDefault()
+          void forget()
+        })
+
+        swatch.append(remove)
       }
 
       swatches.append(swatch)
@@ -525,7 +579,7 @@ function staticText(text: string): HTMLElement {
 
 function versionLabel(): HTMLElement {
   const wrap = document.createElement('div')
-  wrap.className = 'stack'
+  wrap.className = 'inline-control'
 
   const value = document.createElement('span')
   value.className = 'static-value'
@@ -694,6 +748,20 @@ const SECTIONS: Section[] = [
     title: 'Import',
     icon: 'install',
     build: () => [importGroup()]
+  },
+  {
+    id: 'default',
+    title: 'Default browser',
+    icon: 'globe',
+    build: () => [
+      group(
+        row(
+          'Open links with IE2',
+          'Windows will not let a program make itself the default, so this registers IE2 and opens the Windows page where you choose it. Look for IE2 under Web browser, and under .html and .pdf if you want those too.',
+          defaultBrowserRow()
+        )
+      )
+    ]
   },
   {
     id: 'search',
@@ -979,7 +1047,6 @@ const SECTIONS: Section[] = [
     title: 'About',
     icon: 'help',
     build: () => [
-      aboutStory(),
       group(
         row('Version', 'Which build is running, so you never have to guess.', versionLabel()),
         row(
@@ -987,7 +1054,11 @@ const SECTIONS: Section[] = [
           'The Chromium and Node versions underneath.',
           staticText(`Electron ${window.ie2.versions?.electron ?? '—'} · Chromium ${window.ie2.versions?.chrome ?? '—'}`)
         ),
-        updateRow(),
+        row(
+          'Updates',
+          'Checks this project’s GitHub releases and installs the new version for you.',
+          updateRow()
+        ),
         row(
           'Automatic update check',
           'Ask GitHub for the latest release when the browser starts. Only version numbers are compared — nothing about you is sent. With this off, the button above still works.',
@@ -1005,7 +1076,8 @@ const SECTIONS: Section[] = [
             if (ok) await window.ie2.restart()
           })
         )
-      )
+      ),
+      aboutStory()
     ]
   },
   {

@@ -709,3 +709,163 @@ button.action.danger:hover {
   font-size: 13px;
   line-height: 1.65;
 }
+
+/* --- version row: value and Copy on one line ------------------------------ */
+
+.inline-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* --- saved accent colours -------------------------------------------------- */
+
+.accents button {
+  position: relative;
+}
+
+/* Only saved colours carry one — the presets are not removable. */
+.swatch-remove {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--panel);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.accents button:hover .swatch-remove,
+.swatch-remove:hover {
+  opacity: 1;
+}
+
+/* --- motion ---------------------------------------------------------------
+   settings.css does not layer on home.css, so it needs its own copy of the
+   switch the Animations setting throws. */
+
+.no-motion *,
+.no-motion *::before,
+.no-motion *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+body,
+.group,
+.row,
+aside {
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+/* Switching section replaces the whole panel, so it comes in as one piece. */
+#panels > * {
+  animation: panel-in 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+#panels > *:nth-child(2) { animation-delay: 40ms; }
+#panels > *:nth-child(3) { animation-delay: 70ms; }
+#panels > *:nth-child(n + 4) { animation-delay: 100ms; }
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* The sidebar responds before you commit to a click. */
+nav button {
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+nav button:hover {
+  transform: translateX(3px);
+}
+
+nav button:active {
+  transform: translateX(1px) scale(0.99);
+}
+
+/* Rows lift very slightly, enough to show which one the pointer owns. */
+.row {
+  transition: background 140ms ease;
+}
+
+.row:hover {
+  background: var(--hover);
+}
+
+/* Controls answer. */
+.action,
+select,
+input[type='text'] {
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.action:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.action:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
+/* The switch knob slides, and the track fills behind it. */
+.switch {
+  transition: background 200ms ease, border-color 200ms ease;
+}
+
+.switch .dot,
+.switch::after {
+  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), background 200ms ease;
+}
+
+/* Colour swatches and wallpapers grow under the pointer. */
+.accents button,
+.wallpaper {
+  transition:
+    transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.accents button:hover {
+  transform: scale(1.15);
+}
+
+.accents button:active {
+  transform: scale(0.95);
+}
+
+/* The About prose reads as a document, so it arrives paragraph by paragraph. */
+.about-story section {
+  animation: page-in 300ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.about-story section:nth-child(2) { animation-delay: 50ms; }
+.about-story section:nth-child(3) { animation-delay: 100ms; }
+.about-story section:nth-child(4) { animation-delay: 150ms; }
+.about-story section:nth-child(n + 5) { animation-delay: 200ms; }
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}

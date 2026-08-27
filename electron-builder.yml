@@ -29,6 +29,36 @@ files:
 
 asar: true
 
+# Registers IE2 with Windows as something that can open links and these file
+# types. This is what makes it appear in Settings > Default apps at all —
+# without it the "make default" button has nothing to select.
+protocols:
+  - name: Web link
+    schemes: [http, https]
+
+fileAssociations:
+  - ext: html
+    name: HTML Document
+    role: Viewer
+  - ext: htm
+    name: HTML Document
+    role: Viewer
+  - ext: pdf
+    name: PDF Document
+    role: Viewer
+  - ext: svg
+    name: SVG Image
+    role: Viewer
+  - ext: xml
+    name: XML Document
+    role: Viewer
+  - ext: txt
+    name: Text Document
+    role: Viewer
+  - ext: json
+    name: JSON File
+    role: Viewer
+
 win:
   target:
     # Installer for normal use, and a single portable exe for quick testing.

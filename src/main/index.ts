@@ -8,7 +8,8 @@ import {
   WebContentsView,
   ipcMain,
   session,
-  shell
+  shell,
+  webContents
 } from 'electron'
 import { join } from 'node:path'
 import {
@@ -56,6 +57,7 @@ import {
   setMessage
 } from './locale'
 import { getSettings, loadSettings, resetSettings, setSetting } from './settings'
+import { isDefaultBrowser, openableFromArgv, requestDefaultBrowser } from './defaults'
 import {
   check,
   download,
@@ -657,6 +659,9 @@ function registerInternalIpc(): void {
   )
   // --- updates ---------------------------------------------------------------
 
+  ipcMain.handle('internal:default-browser', fromInternalPage(() => isDefaultBrowser()))
+  ipcMain.handle('internal:make-default', fromInternalPage(() => requestDefaultBrowser()))
+
   ipcMain.handle('internal:changelog', fromInternalPage(() => latestChanges()))
   ipcMain.handle('internal:update-state', fromInternalPage(() => updateState()))
   ipcMain.handle('internal:update-check', fromInternalPage(() => check()))
@@ -943,6 +948,33 @@ registerInternalScheme()
 
 app.setAppUserModelId('com.internetexplorer2.browser')
 
+/**
+ * One browser, however many links are clicked.
+ *
+ * As the default browser, Windows launches the executable again for every link
+ * opened from another program. Without this lock each one would start a
+ * complete second browser — its own windows, its own 120 MB, and two processes
+ * writing to the same database. The second instance hands its URL to the first
+ * and exits.
+ */
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0)
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const url = openableFromArgv(argv)
+    const shell = focusedShell()
+
+    if (!shell) {
+      createWindow(url ?? undefined)
+      return
+    }
+
+    if (url) shell.tabs.createTab(url)
+    if (shell.window.isMinimized()) shell.window.restore()
+    shell.window.focus()
+  })
+}
+
 app.whenReady().then(() => {
   // No File / Edit / View menu bar. Clipboard and text-editing shortcuts are
   // handled by Chromium inside web contents, so nothing useful is lost.
@@ -963,17 +995,23 @@ app.whenReady().then(() => {
 
   registerIpc()
   initDownloads(pushStateEverywhere)
-  createWindow()
+
+  // Opened by Windows with a link or a file? Start on that rather than the
+  // new tab page. This is what being the default browser actually means.
+  const opened = openableFromArgv(process.argv)
+  createWindow(opened ?? undefined)
 
   // Filter lists load in the background; the window does not wait on them.
   void initAdblock().then(pushStateEverywhere)
 
-  // Updates report themselves to every open window as they progress.
+  // Updates report themselves as they progress. The Settings page is a *tab*,
+  // not the chrome view, so sending only to chrome left the button with no way
+  // to show that anything was happening.
   onUpdateState((state) => {
-    for (const shell of shells.values()) {
-      if (!shell.chrome.webContents.isDestroyed()) {
-        shell.chrome.webContents.send('update:state', state)
-      }
+    for (const contents of webContents.getAllWebContents()) {
+      if (contents.isDestroyed()) continue
+      if (!isInternalUrl(contents.getURL()) && !shells.has(contents.id)) continue
+      contents.send('update:state', state)
     }
   })
   initUpdater()

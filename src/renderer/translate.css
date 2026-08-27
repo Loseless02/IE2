@@ -170,3 +170,26 @@ footer button:hover {
   color: var(--text-dim);
   font-size: 12px;
 }
+
+/* --- motion ---------------------------------------------------------------
+   Layered on home.css, which supplies the no-motion switch. */
+
+.entry {
+  transition: background 140ms ease;
+}
+
+.entry:hover {
+  background: var(--hover);
+}
+
+/* The field being typed into is the one that matters. */
+.entry input,
+.entry textarea {
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+/* Progress fills rather than jumping as strings are translated. */
+#progress-fill,
+.progress-fill {
+  transition: width 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}

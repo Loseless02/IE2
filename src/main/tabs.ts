@@ -252,7 +252,10 @@ export class TabManager {
         contextIsolation: true,
         nodeIntegration: false,
         webviewTag: false,
-        webSecurity: true
+        webSecurity: true,
+        // Chromium's built-in PDF viewer. Without this a PDF downloads instead
+        // of opening, which makes being the default PDF handler useless.
+        plugins: true
       }
     })
 
@@ -798,7 +801,10 @@ export class TabManager {
         contextIsolation: true,
         nodeIntegration: false,
         webviewTag: false,
-        webSecurity: true
+        webSecurity: true,
+        // Chromium's built-in PDF viewer. Without this a PDF downloads instead
+        // of opening, which makes being the default PDF handler useless.
+        plugins: true
       }
     })
 

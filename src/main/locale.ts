@@ -2,6 +2,7 @@ import { app, dialog } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { EN, LANGUAGES, completeness, messageKeys, resolve, type LanguageId } from '../shared/i18n'
+import tr from '../shared/locales/tr.json'
 
 /**
  * Translations as data, not code.
@@ -9,7 +10,14 @@ import { EN, LANGUAGES, completeness, messageKeys, resolve, type LanguageId } fr
  * Each language is one JSON file of key → text under userData/locales. The
  * translation editor writes to them directly, so a translation can be finished,
  * corrected or shared without touching the source or rebuilding.
+ *
+ * There are two layers. The ones below ship inside the build, so everybody who
+ * installs the browser gets them; anything the user writes in the editor is
+ * saved to their own file and laid on top. That is what makes a finished
+ * translation reach other people at all — before this, a translation only
+ * existed on the machine it was typed on.
  */
+const SHIPPED: Record<string, Record<string, string>> = { tr }
 
 const overlays = new Map<string, Record<string, string>>()
 
@@ -106,26 +114,34 @@ export function removeLanguage(code: string): void {
   }
 }
 
+/** Keep only known keys holding strings, so a stray file cannot inject anything. */
+function sanitise(source: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!source || typeof source !== 'object') return out
+
+  for (const key of messageKeys()) {
+    const value = (source as Record<string, unknown>)[key]
+    if (typeof value === 'string' && value.trim() !== '') out[key] = value
+  }
+
+  return out
+}
+
 export function loadLocale(language: string): Record<string, string> {
   const cached = overlays.get(language)
   if (cached) return cached
 
-  let overlay: Record<string, string> = {}
+  // What shipped with the build, then whatever this user has written over it.
+  let overlay: Record<string, string> = sanitise(SHIPPED[language.toLowerCase()])
 
   try {
     const file = localeFile(language)
     if (existsSync(file)) {
-      const parsed = JSON.parse(readFileSync(file, 'utf8')) as unknown
-      if (parsed && typeof parsed === 'object') {
-        // Only known keys, only strings: a stray file cannot inject anything.
-        for (const key of messageKeys()) {
-          const value = (parsed as Record<string, unknown>)[key]
-          if (typeof value === 'string') overlay[key] = value
-        }
-      }
+      overlay = { ...overlay, ...sanitise(JSON.parse(readFileSync(file, 'utf8'))) }
     }
   } catch {
-    overlay = {}
+    // A corrupt file leaves the shipped translation in place rather than
+    // dropping the language back to English.
   }
 
   overlays.set(language, overlay)

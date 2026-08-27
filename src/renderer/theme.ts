@@ -9,7 +9,9 @@ import { toHex, type Settings } from '../shared/settings'
  * The accent is kept separate: a chosen accent survives a theme change, and
  * clearing it falls back to whatever the theme itself prefers.
  */
-export function applyTheme(settings: Pick<Settings, 'theme' | 'accent'>): void {
+export function applyTheme(
+  settings: Pick<Settings, 'theme' | 'accent'> & { animations?: boolean }
+): void {
   const theme = themeById(settings.theme)
   const root = document.documentElement
   const c = theme.colours
@@ -32,4 +34,11 @@ export function applyTheme(settings: Pick<Settings, 'theme' | 'accent'>): void {
 
   // Lets stylesheets special-case a light interface where they must.
   root.dataset['mode'] = theme.mode
+
+  // The Animations setting used to reach only the browser chrome, so every
+  // internal page kept moving after it was switched off. Each page calls this,
+  // so this is the one place that governs all of them.
+  if (settings.animations !== undefined) {
+    root.classList.toggle('no-motion', !settings.animations)
+  }
 }

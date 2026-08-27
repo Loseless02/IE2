@@ -90,6 +90,13 @@ let selectedTabs = new Set<number>()
 
 /** Which group's chip has its panel open, if any. */
 let openGroupId: number | null = null
+
+/**
+ * The tab currently being dragged. Its position is owned by the pointer, so
+ * the FLIP pass skips it — otherwise every reorder would yank it back to the
+ * slot it just left.
+ */
+let draggingId: number | null = null
 let downloadsOpen = false
 let shieldOpen = false
 let paletteOpen = false
@@ -145,13 +152,34 @@ function buildGroupChip(group: TabGroup): HTMLElement {
   chip.className = 'group-chip'
   chip.dataset['group'] = String(group.id)
 
+  const caret = document.createElement('span')
+  caret.className = 'group-caret'
+  caret.append(icon('forward'))
+  chip.append(caret)
+
   const label = document.createElement('span')
   label.className = 'group-label'
   chip.append(label)
 
+  // Click folds the group away, which is what a chip in a tab strip does
+  // everywhere else. The panel is on right-click, where menus live.
   chip.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return
     event.preventDefault()
     event.stopPropagation()
+
+    const id = Number(chip.dataset['group'])
+    const group = state.groups.find((g) => g.id === id)
+    if (!group) return
+
+    closeGroupPanel()
+    void window.browser.updateGroup(id, { collapsed: !group.collapsed })
+  })
+
+  chip.addEventListener('contextmenu', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+
     const id = Number(chip.dataset['group'])
     if (openGroupId === id) closeGroupPanel()
     else openGroupPanel(id)
@@ -169,8 +197,17 @@ function updateGroupChip(chip: HTMLElement, group: TabGroup): void {
   // An unnamed group is a bare coloured dot, exactly as wide as it needs to be.
   const named = group.name.trim().length > 0
   chip.classList.toggle('unnamed', !named)
-  if (label.textContent !== group.name) label.textContent = group.name
-  chip.title = named ? group.name : 'Unnamed group'
+  chip.classList.toggle('collapsed', group.collapsed)
+
+  // Folded away, the chip is all that is left of the group, so it carries the
+  // count — otherwise the tabs look closed rather than hidden.
+  const count = state.tabs.filter((tab) => tab.groupId === group.id).length
+  const text = group.collapsed ? `${group.name || ''} ${count}`.trim() : group.name
+  if (label.textContent !== text) label.textContent = text
+
+  chip.title = `${named ? group.name : 'Unnamed group'} — ${
+    group.collapsed ? 'click to expand' : 'click to collapse'
+  }, right-click for options`
 }
 
 function buildTabNode(tab: TabState): HTMLElement {
@@ -384,8 +421,10 @@ function renderTabs(): void {
     if (!node) continue
 
     // A collapsed group keeps only its chip on screen; the tabs stay open.
+    // A class rather than `hidden`, because `display: none` cannot be
+    // transitioned — the tabs have to be able to slide shut.
     const group = tab.groupId !== null ? state.groups.find((g) => g.id === tab.groupId) : undefined
-    node.hidden = Boolean(group?.collapsed)
+    node.classList.toggle('collapsed', Boolean(group?.collapsed))
 
     tabsEl.append(node)
   }
@@ -394,6 +433,8 @@ function renderTabs(): void {
 
   // FLIP: put each moved tab back where it was, then let it slide into place.
   for (const [id, node] of [...tabNodes, ...[...groupNodes].map(([gid, chip]) => [-gid, chip] as [number, HTMLElement])]) {
+    if (id === draggingId) continue
+
     const from = before.get(id)
     if (from === undefined) continue
 
@@ -584,6 +625,41 @@ function layoutTabs(): void {
 function beginDrag(start: MouseEvent, id: number, node: HTMLElement): void {
   let dragging = false
   let tearing = false
+  let lastIndex = -1
+
+  // Where inside the tab it was grabbed, so it stays under the same point of
+  // the cursor rather than jumping so its edge meets the pointer.
+  const grabOffset = start.clientX - node.getBoundingClientRect().left
+
+  /**
+   * Put the tab under the cursor.
+   *
+   * Recomputed from the layout position every time rather than accumulated,
+   * because reordering re-lays-out the strip underneath a drag in progress —
+   * an accumulated offset would drift further out with every swap.
+   */
+  const follow = (pointerX: number): void => {
+    const applied = Number(node.dataset['dragX'] ?? 0)
+    const layoutLeft = node.getBoundingClientRect().left - applied
+    const offset = pointerX - grabOffset - layoutLeft
+
+    node.dataset['dragX'] = String(offset)
+    node.style.transform = `translateX(${offset}px) scale(1.04)`
+  }
+
+  /** How many tabs the pointer has passed, which is where it would land. */
+  const indexAt = (pointerX: number): number => {
+    const tabs = [...tabsEl.querySelectorAll('.tab')] as HTMLElement[]
+    let index = 0
+
+    for (const tab of tabs) {
+      if (tab === node) continue
+      const box = tab.getBoundingClientRect()
+      if (pointerX > box.left + box.width / 2) index++
+    }
+
+    return index
+  }
 
   const move = (event: MouseEvent): void => {
     const movedX = Math.abs(event.clientX - start.clientX)
@@ -593,6 +669,7 @@ function beginDrag(start: MouseEvent, id: number, node: HTMLElement): void {
 
     if (!dragging) {
       dragging = true
+      draggingId = id
       node.classList.add('dragging')
     }
 
@@ -600,25 +677,36 @@ function beginDrag(start: MouseEvent, id: number, node: HTMLElement): void {
     // window, so stop reordering and show that intent.
     tearing = movedY >= TEAR_OUT_DISTANCE
     node.classList.toggle('tearing', tearing)
+
+    follow(event.clientX)
     if (tearing) return
 
-    const targets = [...tabsEl.children] as HTMLElement[]
-    const over = targets.find((child) => {
-      const box = child.getBoundingClientRect()
-      return event.clientX >= box.left && event.clientX <= box.right
-    })
-
-    if (over && over !== node) {
-      const index = targets.indexOf(over)
+    // The gap the other tabs open up is the indicator — the strip reorders
+    // live, so what you see is where it will be when you let go.
+    const index = indexAt(event.clientX)
+    if (index !== lastIndex) {
+      lastIndex = index
       window.browser.moveTab(id, index)
     }
   }
 
   const end = (): void => {
-    node.classList.remove('dragging', 'tearing')
-    if (tearing) void window.browser.detachTab(id)
     document.removeEventListener('mousemove', move)
     document.removeEventListener('mouseup', end)
+
+    draggingId = null
+    node.classList.remove('dragging', 'tearing')
+
+    if (tearing) {
+      void window.browser.detachTab(id)
+      return
+    }
+
+    // Settle into the slot instead of snapping, so the drop reads as landing.
+    node.classList.add('settling')
+    node.style.transform = ''
+    delete node.dataset['dragX']
+    window.setTimeout(() => node.classList.remove('settling'), 200)
   }
 
   document.addEventListener('mousemove', move)

@@ -1582,3 +1582,245 @@ body {
 .tab.internal .favicon.fallback {
   color: var(--accent);
 }
+
+/* --- collapsing a group ---------------------------------------------------- */
+
+/* Slides shut rather than vanishing. `[hidden]` cannot do this: display:none
+   has no intermediate state to animate through. */
+.tab.collapsed {
+  width: 0 !important;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-width: 0;
+}
+
+/* A folded group's chip carries the count, so it needs room for it. */
+.group-chip.collapsed {
+  background: color-mix(in srgb, var(--group) 34%, transparent);
+}
+
+.group-chip.collapsed .group-label::after {
+  content: '';
+}
+
+/* --- dragging a tab -------------------------------------------------------- */
+
+/* Lifted: it follows the pointer, so it sits above the strip and casts a
+   shadow to read as picked up rather than merely highlighted. */
+.tab.dragging {
+  z-index: 5;
+  opacity: 0.92;
+  box-shadow: 0 8px 20px #00000073;
+  transition: none;
+  cursor: grabbing;
+}
+
+/* On release it slides the last few pixels into the slot it landed in. */
+.tab.settling {
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    background 120ms ease;
+}
+
+/* --- motion ---------------------------------------------------------------
+   Everything here is disabled wholesale by the `no-motion` class when the
+   animations setting is off, so none of it is load-bearing. */
+
+/* Tabs lift slightly under the pointer. */
+.tab:not(.dragging):not(.sliding):hover {
+  transform: translateY(-1px);
+}
+
+/* The close button turns as you reach for it. */
+.tab .close {
+  transition: background 120ms ease, color 120ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tab .close:hover {
+  transform: rotate(90deg);
+}
+
+/* The + rotates into a cross-ish angle on hover, then springs back. */
+#new-tab svg {
+  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+#new-tab:hover svg {
+  transform: rotate(90deg);
+}
+
+#new-tab:active svg {
+  transform: rotate(90deg) scale(0.85);
+}
+
+/* A favicon fades in rather than popping, which is noticeable when a strip
+   full of tabs finishes loading at once. */
+.tab .favicon {
+  animation: favicon-in 180ms ease;
+}
+
+@keyframes favicon-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* The group chip's caret points right when folded, down when open. */
+.group-caret {
+  display: grid;
+  place-items: center;
+  margin-right: 4px;
+  color: var(--group);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform: rotate(90deg);
+}
+
+.group-caret svg {
+  width: 12px;
+  height: 12px;
+}
+
+.group-chip.collapsed .group-caret {
+  transform: rotate(0deg);
+}
+
+.group-chip:active {
+  transform: scale(0.96);
+}
+
+.group-chip {
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+/* Suggestions arrive in sequence instead of all at once. Capped, because a
+   long list should not turn into a wave. */
+.suggestion {
+  animation: suggestion-in 160ms ease backwards;
+}
+
+.suggestion:nth-child(1) { animation-delay: 0ms; }
+.suggestion:nth-child(2) { animation-delay: 20ms; }
+.suggestion:nth-child(3) { animation-delay: 40ms; }
+.suggestion:nth-child(4) { animation-delay: 60ms; }
+.suggestion:nth-child(5) { animation-delay: 80ms; }
+.suggestion:nth-child(n + 6) { animation-delay: 100ms; }
+
+@keyframes suggestion-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Toolbar buttons answer the pointer. */
+#toolbar > button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* The shield and downloads badges land rather than appear. */
+#dl-count {
+  animation: badge-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+/* --- motion, continued ------------------------------------------------------ */
+
+/* Panels already pop open; their contents follow rather than arriving with it. */
+#dl-list > *,
+#bm-list > *,
+#shield-top > *,
+#palette-list > * {
+  animation: row-in 180ms ease backwards;
+}
+
+#dl-list > *:nth-child(2),
+#bm-list > *:nth-child(2),
+#shield-top > *:nth-child(2),
+#palette-list > *:nth-child(2) { animation-delay: 25ms; }
+
+#dl-list > *:nth-child(3),
+#bm-list > *:nth-child(3),
+#shield-top > *:nth-child(3),
+#palette-list > *:nth-child(3) { animation-delay: 50ms; }
+
+#dl-list > *:nth-child(n + 4),
+#bm-list > *:nth-child(n + 4),
+#shield-top > *:nth-child(n + 4),
+#palette-list > *:nth-child(n + 4) { animation-delay: 75ms; }
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+
+/* The bars behind the blocked-domain counts grow to their share. */
+.offender .bar {
+  transition: width 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The address bar widens its focus ring instead of switching it on. */
+#omnibox-wrap {
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Panel rows answer the pointer, the same way everywhere. */
+.bm-item,
+.dl-item,
+.palette-item,
+.suggestion {
+  transition: background 120ms ease, transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bm-item:hover,
+.palette-item:hover {
+  transform: translateX(2px);
+}
+
+/* Switching theme should look deliberate rather than like a repaint.
+   Deliberately not `.tab`: it owns its own transition, and a blanket rule here
+   would override `.tab.dragging { transition: none }` and put lag between the
+   pointer and the tab being dragged. */
+#toolbar,
+#tabstrip,
+#omnibox-wrap,
+#dropdown,
+#palette,
+#downloads-panel,
+#shield-panel,
+#bookmarks-panel,
+#media-panel {
+  transition-property: background, background-color, color, border-color, box-shadow;
+  transition-duration: 180ms;
+  transition-timing-function: ease;
+}
+
+/* The media panel's progress and the screenshot preview. */
+#media-fill {
+  transition: width 240ms linear;
+}
+
+#shot-preview {
+  animation: shot-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes shot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

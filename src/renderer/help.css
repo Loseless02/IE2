@@ -121,3 +121,29 @@ table.ref.keys-table td.keys {
 .matrix td.no {
   color: #7fd18e;
 }
+
+/* --- motion ---------------------------------------------------------------
+   Layered on home.css, which supplies the no-motion switch. */
+
+/* The manual is long, so each entry answers the pointer rather than sitting
+   inert while you scan for the one you want. */
+.entry,
+.item {
+  transition: background 140ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.entry:hover,
+.item:hover {
+  background: var(--hover);
+  transform: translateX(3px);
+}
+
+/* Sections fade up as the page settles. */
+section {
+  animation: page-in 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+section:nth-of-type(2) { animation-delay: 40ms; }
+section:nth-of-type(3) { animation-delay: 80ms; }
+section:nth-of-type(4) { animation-delay: 120ms; }
+section:nth-of-type(n + 5) { animation-delay: 160ms; }

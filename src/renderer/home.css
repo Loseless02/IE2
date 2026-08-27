@@ -601,3 +601,129 @@ body.glass #recall-input {
 #whats-new-close:hover {
   background: var(--hover);
 }
+
+/* --- motion ---------------------------------------------------------------
+   home.css is the frame the help, bookmarks and translate pages build on, so
+   this governs all of them. Everything is switched off in one place by the
+   Animations setting, which adds `no-motion` to the root element. */
+
+.no-motion *,
+.no-motion *::before,
+.no-motion *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Colours ease when the theme changes instead of snapping between palettes. */
+body,
+.stat,
+.hit,
+#recall-input {
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+/* The page arrives rather than appearing. */
+main > * {
+  animation: page-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+main > *:nth-child(2) { animation-delay: 40ms; }
+main > *:nth-child(3) { animation-delay: 80ms; }
+main > *:nth-child(4) { animation-delay: 120ms; }
+main > *:nth-child(n + 5) { animation-delay: 160ms; }
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Each figure lands after the one before it. */
+.stat {
+  animation: stat-in 300ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.stat:nth-child(1) { animation-delay: 60ms; }
+.stat:nth-child(2) { animation-delay: 90ms; }
+.stat:nth-child(3) { animation-delay: 120ms; }
+.stat:nth-child(4) { animation-delay: 150ms; }
+.stat:nth-child(5) { animation-delay: 180ms; }
+.stat:nth-child(6) { animation-delay: 210ms; }
+.stat:nth-child(7) { animation-delay: 240ms; }
+.stat:nth-child(n + 8) { animation-delay: 270ms; }
+
+@keyframes stat-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+.stat.clickable {
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1), background 140ms ease;
+}
+
+.stat.clickable:hover {
+  transform: translateY(-2px);
+}
+
+.stat.clickable:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Recall results and recent pages slide in as they are found. */
+.hit {
+  animation: hit-in 200ms ease backwards;
+  transition: background 140ms ease, transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hit:nth-child(1) { animation-delay: 0ms; }
+.hit:nth-child(2) { animation-delay: 30ms; }
+.hit:nth-child(3) { animation-delay: 60ms; }
+.hit:nth-child(4) { animation-delay: 90ms; }
+.hit:nth-child(n + 5) { animation-delay: 120ms; }
+
+.hit:hover {
+  transform: translateX(3px);
+}
+
+@keyframes hit-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* The recall field grows into focus. */
+#recall-input {
+  transition:
+    background-color 200ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#recall-input:focus {
+  transform: scale(1.01);
+}
+
+/* A wallpaper fades up instead of flashing in when the image decodes. */
+#wallpaper {
+  animation: wallpaper-in 420ms ease;
+}
+
+@keyframes wallpaper-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The gear only asserts itself when reached for. */
+#customise {
+  transition: opacity 140ms ease, background 140ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#customise:hover {
+  transform: rotate(45deg);
+}
