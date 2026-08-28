@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Reader</title>
+    <link rel="stylesheet" href="./home.css" />
+    <link rel="stylesheet" href="./reader.css" />
+  </head>
+  <body>
+    <div id="bar">
+      <button id="original">View original</button>
+      <div id="controls">
+        <button id="smaller" title="Smaller text">A−</button>
+        <button id="bigger" title="Larger text">A+</button>
+        <button id="width" title="Line width">Width</button>
+      </div>
+    </div>
+
+    <main>
+      <article id="article" hidden>
+        <h1 id="title"></h1>
+        <div id="meta">
+          <span id="minutes"></span>
+          <span id="byline"></span>
+          <span id="published"></span>
+          <span id="host"></span>
+        </div>
+        <div id="body"></div>
+      </article>
+
+      <div id="empty" hidden>
+        <h1>Nothing to read here</h1>
+        <p>
+          This page has no article in it — or it is built in a way that hides one.
+          Reader mode works on pages that are mostly prose.
+        </p>
+        <button id="back">Go back</button>
+      </div>
+    </main>
+    <script type="module" src="./reader.ts"></script>
+  </body>
+</html>

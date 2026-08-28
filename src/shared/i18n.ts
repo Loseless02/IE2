@@ -45,6 +45,8 @@ export const EN: Record<string, string> = {
   'toolbar.copyNothing': 'No address to copy',
   'toolbar.screenshot': 'Screenshot',
   'toolbar.pip': 'Picture in picture',
+  'toolbar.reader': 'Reader mode — just the article',
+  'toolbar.readerNothing': 'No article on this page',
   'toolbar.split': 'Split view',
   'toolbar.splitOff': 'Leave split view',
   'toolbar.splitNeedsTwo': 'Open a second tab first',
@@ -52,6 +54,7 @@ export const EN: Record<string, string> = {
   'toolbar.pipUnavailable': 'This page has nothing that can float',
   'toolbar.downloads': 'Downloads',
   'toolbar.bookmarks': 'Bookmarks',
+  'toolbar.history': 'History',
   'toolbar.media': 'What is playing',
   'toolbar.qr': 'QR code for this page',
   'panel.qrHint': 'Point a phone camera at this to open the page there.',
@@ -101,6 +104,10 @@ export const EN: Record<string, string> = {
   'omnibox.searchedBefore': 'Searched before',
   'omnibox.suggests': 'suggests',
   'omnibox.footer': 'IE2 remembers every page you read. On purpose.',
+  'find.placeholder': 'Find in page',
+  'find.previous': 'Previous match',
+  'find.next': 'Next match',
+  'find.none': 'No matches',
 
   // --- command palette -------------------------------------------------------
   'palette.placeholder': 'Type a command, or search your open tabs',
@@ -125,6 +132,7 @@ export const EN: Record<string, string> = {
   'home.recallPlaceholder': 'Search the text of every page you have read',
   'home.recent': 'Recently, against your better judgement',
   'home.forgetAll': 'Forget everything',
+  'home.allHistory': 'All history',
   'home.noHistory': 'No history yet. Suspiciously clean.',
   'home.noMatch': 'Not in the archive. You never read this. Allegedly.',
   'home.pagesKept': 'pages kept',
@@ -210,7 +218,7 @@ export function messageKeys(): string[] {
 
 export function groupOf(key: string): string {
   const prefix = key.split('.')[0]
-  if (prefix === 'omnibox' || prefix === 'tab') return 'panel'
+  if (prefix === 'omnibox' || prefix === 'tab' || prefix === 'find') return 'panel'
   return MESSAGE_GROUPS[prefix] ? prefix : 'common'
 }
 

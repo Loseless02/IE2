@@ -44,6 +44,12 @@ export interface InstallableApp {
   name: string
   startUrl: string
   iconUrl: string | null
+  /**
+   * Every icon the site offers, best first. Sites disagree about where a usable
+   * one lives — manifest, touch icon, favicon — so installing works through the
+   * list until one decodes rather than betting on a single guess.
+   */
+  iconUrls?: string[]
   origin: string
 }
 
@@ -161,6 +167,31 @@ export interface UpdateState {
   message?: string
 }
 
+/**
+ * A piece of an article, as reader mode rebuilds it.
+ *
+ * Text and image addresses only — never markup. The reader page renders these
+ * with `textContent`, so nothing from the page can execute there.
+ */
+export type ReaderBlock =
+  | { type: 'heading'; text: string; level: number }
+  | { type: 'paragraph'; text: string }
+  | { type: 'quote'; text: string }
+  | { type: 'code'; text: string }
+  | { type: 'item'; text: string }
+  | { type: 'image'; src: string; text: string }
+
+export interface ReaderArticle {
+  url: string
+  title: string
+  byline: string
+  /** ISO date, when the page declared one. */
+  published: string
+  /** Estimated reading time in minutes. */
+  minutes: number
+  blocks: ReaderBlock[]
+}
+
 export interface MediaState {
   hasMedia: boolean
   title: string
@@ -215,6 +246,8 @@ export interface ImportResult {
 export const HOME_URL = 'ie2://home'
 export const HELP_URL = 'ie2://help'
 export const BOOKMARKS_URL = 'ie2://bookmarks'
+export const HISTORY_URL = 'ie2://history'
+export const READER_URL = 'ie2://reader'
 export const SETTINGS_URL = 'ie2://settings'
 
 /** Tab strip height. Doubles as the draggable title bar / window-control area. */

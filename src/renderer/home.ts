@@ -176,14 +176,23 @@ function pickVerdict(stats: RecallStats, days: number): string {
   return `Archived over ${days} ${days === 1 ? 'day' : 'days'}. Every word still here.`
 }
 
-function renderHits(target: HTMLElement, hits: HistoryHit[], emptyText: string): void {
+function renderHits(
+  target: HTMLElement,
+  hits: HistoryHit[],
+  emptyText: string,
+  removable = false
+): void {
   target.replaceChildren()
 
-  if (hits.length === 0) {
+  const showEmpty = (): void => {
     const empty = document.createElement('div')
     empty.className = 'empty'
     empty.textContent = emptyText
     target.append(empty)
+  }
+
+  if (hits.length === 0) {
+    showEmpty()
     return
   }
 
@@ -212,6 +221,37 @@ function renderHits(target: HTMLElement, hits: HistoryHit[], emptyText: string):
     title.textContent = hit.title || hostOf(hit.url)
     title.title = hit.url
     head.append(title)
+
+    if (removable) {
+      const remove = document.createElement('button')
+      remove.className = 'hit-remove'
+      remove.type = 'button'
+      remove.textContent = '×'
+      remove.title = t('Remove from history. What the page said is kept.')
+
+      remove.addEventListener('click', async (event) => {
+        // The row itself opens the page; the button must not.
+        event.stopPropagation()
+        remove.disabled = true
+
+        await window.ie2.forgetVisits([hit.url])
+
+        // A height has to be on the node before it can be animated to zero;
+        // `auto` is not a value anything can transition from.
+        node.style.maxHeight = `${node.offsetHeight}px`
+        void node.offsetHeight
+        node.classList.add('leaving')
+        window.setTimeout(() => {
+          node.remove()
+          if (target.children.length === 0) showEmpty()
+        }, 180)
+
+        // The counts on this page describe the history that just changed.
+        void window.ie2.stats().then(renderStats)
+      })
+
+      head.append(remove)
+    }
 
     node.append(head)
 
@@ -252,6 +292,8 @@ input.addEventListener('input', () => {
   }, 100)
 })
 
+el('recent-all').addEventListener('click', () => window.ie2.open('ie2://history'))
+
 el('forget-all').addEventListener('click', async () => {
   const ok = await confirmDialog({
     title: 'Forget everything?',
@@ -271,7 +313,7 @@ el('forget-all').addEventListener('click', async () => {
 async function load(): Promise<void> {
   const [stats, recent] = await Promise.all([window.ie2.stats(), window.ie2.recent(8)])
   renderStats(stats)
-  renderHits(recentList, recent, msg('home.noHistory', 'No history yet. Suspiciously clean.'))
+  renderHits(recentList, recent, msg('home.noHistory', 'No history yet. Suspiciously clean.'), true)
 }
 
 // The omnibox takes focus on a new tab, so this page must not steal it.
@@ -293,6 +335,7 @@ function applyStaticText(): void {
 
   set('.tagline', 'home.tagline', 'The browser that remembers. It was never asked to.')
   set('#recent h2', 'home.recent', 'Recently, against your better judgement')
+  set('#recent-all', 'home.allHistory', 'All history')
   set('#forget-all', 'home.forgetAll', 'Forget everything')
 
   const recall = document.getElementById('recall-input') as HTMLInputElement | null

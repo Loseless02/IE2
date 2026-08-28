@@ -1,0 +1,268 @@
+/* Layered on home.css, help.css, translate.css (#bar) and bookmarks.css. */
+
+#bar .danger,
+#selection .danger {
+  flex: none;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+#bar .danger:hover,
+#selection .danger:hover {
+  border-color: #e5484d;
+  color: #e5484d;
+}
+
+/* Appears only once something is ticked, so the page is a list until it is
+   being acted on. */
+#selection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  margin-bottom: 6px;
+  background: var(--panel);
+  animation: selection-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes selection-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+#selection-count {
+  flex: 1;
+  font-size: 13px;
+}
+
+#selection button {
+  flex: none;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+#selection button:hover {
+  color: var(--text);
+}
+
+#list h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0 6px;
+}
+
+.day-select {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 130ms ease,
+    color 130ms ease,
+    border-color 130ms ease;
+}
+
+#list h2:hover .day-select,
+.day-select:focus-visible {
+  opacity: 1;
+}
+
+.day-select:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  transition: background 130ms ease;
+}
+
+.entry:last-child {
+  border-bottom: 0;
+}
+
+.entry.picked {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.entry .tick {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0 2px 0 8px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.entry .open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.entry .open:hover {
+  background: var(--panel-hover);
+}
+
+.entry .favicon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+}
+
+.entry .text {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.entry .title {
+  flex: none;
+  max-width: 46%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.entry .url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.entry .time {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.entry .remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.entry:hover .remove,
+.entry .remove:focus-visible {
+  opacity: 1;
+}
+
+.entry .remove:hover {
+  background: var(--panel-hover);
+  color: #e5484d;
+}
+
+.entry .remove:active {
+  transform: scale(0.88);
+}
+
+.entry .remove svg {
+  width: 15px;
+  height: 15px;
+}
+
+#more {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 18px 0 40px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+#more:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+#more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The narrow layout drops the URL rather than wrapping every row onto two
+   lines, which turns a long list into a wall. */
+@media (max-width: 640px) {
+  .entry .url {
+    display: none;
+  }
+
+  .entry .title {
+    max-width: none;
+    flex: 1;
+  }
+}

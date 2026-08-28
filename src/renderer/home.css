@@ -146,6 +146,78 @@ h2 {
   font-size: 12.5px;
 }
 
+/* Take one page out of the list. Hidden until the row is under the pointer, so
+   a list being read is not a row of buttons. */
+.hit-remove {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 17px;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.hit:hover .hit-remove,
+.hit-remove:focus-visible {
+  opacity: 1;
+}
+
+.hit-remove:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+.hit-remove:active {
+  transform: scale(0.88);
+}
+
+.hit-remove:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Removed rows collapse rather than vanishing, so the eye can follow what went. */
+.hit.leaving {
+  overflow: hidden;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  opacity: 0;
+  max-height: 0;
+  transition: all 180ms ease;
+}
+
+.recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#recent-all {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+#recent-all:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .hit mark {
   background: transparent;
   color: var(--mark);

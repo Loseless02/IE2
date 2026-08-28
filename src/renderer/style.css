@@ -291,19 +291,18 @@ body {
   animation: marker-in 120ms ease;
 }
 
-/* The "+" sits in a bubble on top of the line. */
+/* An arrow pointing at the slot, which reads as "it goes here" more directly
+   than a plus sign does. */
 #drop-marker::before {
-  content: '+';
+  content: '';
   position: absolute;
-  top: -9px;
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  font-size: 12px;
+  top: -7px;
+  left: -4px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid var(--accent);
 }
 
 @keyframes marker-in {
@@ -563,6 +562,92 @@ body {
   color: var(--text-dim);
 }
 
+/* Find in page (Ctrl+F). A single row rather than a panel: it sits over the
+   page for as long as the search does, so it stays as small as it can. */
+#find-bar {
+  position: absolute;
+  top: 76px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid var(--overlay);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: 0 10px 30px #000000a6, 0 1px 0 var(--overlay) inset;
+  animation: pop 130ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+
+#find-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  user-select: text;
+}
+
+#find-count {
+  flex: none;
+  padding: 0 8px 0 6px;
+  border-right: 1px solid var(--border);
+  margin-right: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: color 140ms ease;
+}
+
+/* Nothing found reads better as a state of the field than as an error banner. */
+#find-count.empty {
+  color: #e5484d;
+}
+
+#find-bar.no-match #find-input {
+  color: #e5484d;
+}
+
+#find-bar button {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+#find-bar button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#find-bar button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+#find-bar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#find-bar svg {
+  width: 16px;
+  height: 16px;
+}
+
 #palette-footer {
   padding: 7px 12px;
   border-top: 1px solid var(--border);
@@ -601,7 +686,8 @@ body {
   #palette,
   #dropdown,
   #downloads-panel,
-  #shield-panel {
+  #shield-panel,
+  #find-bar {
     animation: none;
   }
 }
@@ -1803,7 +1889,8 @@ body {
 #downloads-panel,
 #shield-panel,
 #bookmarks-panel,
-#media-panel {
+#media-panel,
+#find-bar {
   transition-property: background, background-color, color, border-color, box-shadow;
   transition-duration: 180ms;
   transition-timing-function: ease;

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>History</title>
+    <link rel="stylesheet" href="./home.css" />
+    <link rel="stylesheet" href="./help.css" />
+    <link rel="stylesheet" href="./translate.css" />
+    <link rel="stylesheet" href="./bookmarks.css" />
+    <link rel="stylesheet" href="./history.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>History</h1>
+        <p class="tagline">
+          Where you went. Separate from what you read — clearing this leaves the text of those
+          pages searchable, so recall keeps working.
+        </p>
+      </header>
+
+      <div id="bar">
+        <input id="filter" type="text" spellcheck="false" placeholder="Search history" />
+        <span id="count"></span>
+        <button id="forget-history" class="danger">Forget history</button>
+      </div>
+
+      <!-- Only in the way once something is ticked. -->
+      <div id="selection" hidden>
+        <span id="selection-count"></span>
+        <button id="selection-remove" class="danger">Remove selected</button>
+        <button id="selection-clear">Clear selection</button>
+      </div>
+
+      <div id="list"></div>
+
+      <button id="more" hidden>Show more</button>
+    </main>
+    <script type="module" src="./history.ts"></script>
+  </body>
+</html>

@@ -255,15 +255,15 @@ export function searchFullText(query: string, limit = 8): HistoryHit[] {
   try {
     return db
       .prepare(
-        `SELECT p.url            AS url,
-                p.title          AS title,
-                p.favicon        AS favicon,
-                p.last_visit     AS lastVisit,
+        `SELECT f.url                        AS url,
+                COALESCE(p.title, f.title)   AS title,
+                p.favicon                    AS favicon,
+                COALESCE(p.last_visit, 0)    AS lastVisit,
                 snippet(pages_fts, 2, '[', ']', '…', 12) AS snippet
          FROM pages_fts f
-         JOIN pages p ON p.url = f.url
+         LEFT JOIN pages p ON p.url = f.url
          WHERE pages_fts MATCH ?
-         ORDER BY bm25(pages_fts, 0.0, 4.0, 1.0) - (p.last_visit / 1e13)
+         ORDER BY bm25(pages_fts, 0.0, 4.0, 1.0) - (COALESCE(p.last_visit, 0) / 1e13)
          LIMIT ?`
       )
       .all(match, limit) as unknown as HistoryHit[]
@@ -285,6 +285,46 @@ export function searchHistory(query: string, limit = 4): HistoryHit[] {
        LIMIT ?`
     )
     .all(like, like, limit) as unknown as HistoryHit[]
+}
+
+/**
+ * The history page's list: every recorded page, newest first, optionally
+ * filtered. Paged rather than loaded whole — a year of browsing is tens of
+ * thousands of rows and building that many DOM nodes locks the page up.
+ */
+export function historyPage(query: string, limit: number, offset: number): HistoryHit[] {
+  if (!query.trim()) {
+    return db
+      .prepare(
+        `SELECT url, title, favicon, last_visit AS lastVisit, NULL AS snippet
+         FROM pages ORDER BY last_visit DESC LIMIT ? OFFSET ?`
+      )
+      .all(limit, offset) as unknown as HistoryHit[]
+  }
+
+  const like = `%${query.trim()}%`
+  return db
+    .prepare(
+      `SELECT url, title, favicon, last_visit AS lastVisit, NULL AS snippet
+       FROM pages
+       WHERE url LIKE ? OR title LIKE ?
+       ORDER BY last_visit DESC LIMIT ? OFFSET ?`
+    )
+    .all(like, like, limit, offset) as unknown as HistoryHit[]
+}
+
+/** How many pages the history page is paging through. */
+export function historyCount(query: string): number {
+  if (!query.trim()) {
+    return (db.prepare('SELECT COUNT(*) AS n FROM pages').get() as unknown as { n: number }).n
+  }
+
+  const like = `%${query.trim()}%`
+  return (
+    db
+      .prepare('SELECT COUNT(*) AS n FROM pages WHERE url LIKE ? OR title LIKE ?')
+      .get(like, like) as unknown as { n: number }
+  ).n
 }
 
 export function recentHistory(limit = 100): HistoryHit[] {
@@ -479,7 +519,11 @@ export function blockedCount(): number {
  * figure whose only job is to make you uncomfortable.
  */
 export function recallStats(): RecallStats {
-  const pages = db.prepare('SELECT COUNT(*) AS n FROM pages').get() as unknown as { n: number }
+  // Pages whose history was cleared but whose text was kept are still pages
+  // this browser can recall, so both tables count towards the total.
+  const pages = db
+    .prepare('SELECT COUNT(*) AS n FROM (SELECT url FROM pages UNION SELECT url FROM pages_fts)')
+    .get() as unknown as { n: number }
   const visits = db.prepare('SELECT COUNT(*) AS n FROM visits').get() as unknown as { n: number }
   const chars = db.prepare('SELECT COALESCE(SUM(LENGTH(body)), 0) AS n FROM pages_fts').get() as unknown as {
     n: number
@@ -621,6 +665,26 @@ export function forgetUrl(url: string): void {
   db.prepare('DELETE FROM visits WHERE url = ?').run(url)
   db.prepare('DELETE FROM pages WHERE url = ?').run(url)
   db.prepare('DELETE FROM pages_fts WHERE url = ?').run(url)
+}
+
+/**
+ * Forget where you went, but not what you read.
+ *
+ * The record of the visit goes — the page leaves the history list, the new tab
+ * page and the address suggestions — while the indexed text stays, so recall
+ * still finds the page by something written on it. The two are separate tables
+ * precisely so this can be one without being the other.
+ */
+export function forgetVisit(url: string): void {
+  db.prepare('DELETE FROM visits WHERE url = ?').run(url)
+  db.prepare('DELETE FROM pages WHERE url = ?').run(url)
+}
+
+/** The same, for everything at once. */
+export function clearHistoryOnly(): number {
+  const count = (db.prepare('SELECT COUNT(*) AS n FROM pages').get() as unknown as { n: number }).n
+  db.exec('DELETE FROM visits; DELETE FROM pages;')
+  return count
 }
 
 export function clearAllHistory(): void {

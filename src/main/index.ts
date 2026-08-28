@@ -16,8 +16,10 @@ import {
   CHROME_HEIGHT,
   DROPDOWN_MAX_HEIGHT,
   HOME_URL,
+  READER_URL,
   TITLEBAR_HEIGHT,
   type BrowserState,
+  type ReaderArticle,
   type TabsState
 } from '../shared/types'
 import { TabManager, lockDownSession, type Shortcut } from './tabs'
@@ -58,6 +60,7 @@ import {
 } from './locale'
 import { getSettings, loadSettings, resetSettings, setSetting } from './settings'
 import { isDefaultBrowser, openableFromArgv, requestDefaultBrowser } from './defaults'
+import { extractArticle } from './reader'
 import {
   check,
   download,
@@ -81,9 +84,13 @@ import {
   addBookmark,
   addNeverRemember,
   clearAllHistory,
+  clearHistoryOnly,
   closeDb,
   forgetSite,
   forgetUrl,
+  forgetVisit,
+  historyCount,
+  historyPage,
   initDb,
   importProfile,
   listNeverRemember,
@@ -114,6 +121,23 @@ interface Shell {
 
 /** Keyed by the chrome view's webContents id, which is what IPC events carry. */
 const shells = new Map<number, Shell>()
+
+/**
+ * The article reader mode extracted, per tab.
+ *
+ * Held here rather than passed through the URL or the page: the content came
+ * from an arbitrary website, and ie2://reader is a page with the internal API
+ * attached. This way the reader asks for its own article and receives data,
+ * never markup.
+ */
+const readerArticles = new Map<number, ReaderArticle>()
+
+/**
+ * Pages already relaying find results. `found-in-page` fires repeatedly for a
+ * single search as Chromium refines the count, so the listener is attached
+ * once and kept — re-attaching per keystroke would multiply the messages.
+ */
+const findWired = new WeakSet<Electron.WebContents>()
 
 /**
  * Which window does this call belong to? Normally the sender is a chrome UI, but
@@ -246,6 +270,9 @@ function createWindow(startUrl?: string): void {
     if (input.shift && ['n', 't', 'p'].includes(key)) {
       event.preventDefault()
       runShortcut(shell, key === 'n' ? 'amnesia-tab' : key === 't' ? 'reopen-tab' : 'palette')
+    } else if (!input.shift && key === 'f') {
+      event.preventDefault()
+      runShortcut(shell, 'find')
     } else if (!input.shift && ['t', 'w', 'l', 'r', 'd', 'k'].includes(key)) {
       event.preventDefault()
       runShortcut(
@@ -406,6 +433,11 @@ function runShortcut(shell: Shell, action: Shortcut): void {
       // Focus has to move back to the chrome view before the input can take it.
       shell.chrome.webContents.focus()
       shell.chrome.webContents.send('browser:focus-omnibox')
+      break
+    case 'find':
+      // Same reason: the field lives in the chrome, and the page has the keys.
+      shell.chrome.webContents.focus()
+      shell.chrome.webContents.send('browser:open-find')
       break
     case 'reload':
       shell.tabs.reload()
@@ -586,6 +618,30 @@ function registerInternalIpc(): void {
     'internal:forget',
     fromInternalPage((url: string) => forgetUrl(url))
   )
+
+  /**
+   * Forgetting where you went without forgetting what you read. The history
+   * page and the new tab list both work this way, so removing a site from the
+   * list never quietly throws away the thing the browser exists to keep.
+   */
+  ipcMain.handle(
+    'internal:forget-visit',
+    fromInternalPage((urls: string[]) => {
+      for (const url of urls) forgetVisit(url)
+      return urls.length
+    })
+  )
+  ipcMain.handle(
+    'internal:forget-history',
+    fromInternalPage(() => clearHistoryOnly())
+  )
+  ipcMain.handle(
+    'internal:history',
+    fromInternalPage((query: string, limit: number, offset: number) => ({
+      rows: historyPage(query ?? '', Math.min(limit || 200, 500), Math.max(0, offset || 0)),
+      total: historyCount(query ?? '')
+    }))
+  )
   ipcMain.handle(
     'internal:forget-all',
     fromInternalPage((alsoCookies: boolean) => {
@@ -762,6 +818,84 @@ function registerIpc(): void {
 
   ipcMain.handle('tab:sleep', (e, id: number) => shellFor(e)?.tabs.sleepTab(id))
   ipcMain.handle('tab:wake', (e, id: number) => shellFor(e)?.tabs.wakeTab(id))
+
+  /**
+   * Reader mode. The article is extracted from the page and held here, then
+   * the tab is sent to ie2://reader, which asks for it. Passing it through the
+   * URL or through the page itself would mean trusting page-authored content
+   * on a page that has the internal API.
+   */
+  /**
+   * Find in page.
+   *
+   * Chromium does the searching and highlighting; this only drives it and
+   * relays the counts. The result arrives on an event rather than as a return
+   * value, and keeps arriving as the search refines, so the listener is
+   * attached once per page and left alone.
+   */
+  ipcMain.handle(
+    'page:find',
+    (e, text: string, options?: { forward?: boolean; findNext?: boolean }) => {
+      const shell = shellFor(e)
+      const wc = shell?.tabs.activeWebContents()
+      if (!shell || !wc) return false
+
+      if (!text) {
+        wc.stopFindInPage('clearSelection')
+        return false
+      }
+
+      if (!findWired.has(wc)) {
+        findWired.add(wc)
+        wc.on('found-in-page', (_event, result) => {
+          if (shell.chrome.webContents.isDestroyed()) return
+          shell.chrome.webContents.send('browser:find-result', {
+            matches: result.matches,
+            active: result.activeMatchOrdinal
+          })
+        })
+      }
+
+      wc.findInPage(text, {
+        forward: options?.forward ?? true,
+        findNext: options?.findNext ?? false,
+        matchCase: false
+      })
+
+      return true
+    }
+  )
+
+  ipcMain.handle('page:find-stop', (e) => {
+    shellFor(e)?.tabs.activeWebContents()?.stopFindInPage('clearSelection')
+  })
+
+  ipcMain.handle('page:reader', async (e) => {
+    const shell = shellFor(e)
+    const wc = shell?.tabs.activeWebContents()
+    if (!shell || !wc) return false
+
+    // Already reading? The button goes back to the page it came from.
+    const article = readerArticles.get(wc.id)
+    if (wc.getURL().startsWith(READER_URL)) {
+      if (article) wc.loadURL(article.url)
+      return true
+    }
+
+    const found = await extractArticle(wc)
+    if (!found) return false
+
+    // Kept against the tab's own webContents id, so the reader page can ask
+    // for its own article and get nothing if some other page asks.
+    readerArticles.set(wc.id, found)
+    wc.loadURL(READER_URL)
+    return true
+  })
+
+  ipcMain.handle('internal:reader-article', (event: Electron.IpcMainInvokeEvent) => {
+    if (!isInternalUrl(event.senderFrame?.url)) return null
+    return readerArticles.get(event.sender.id) ?? null
+  })
 
   ipcMain.handle('tab:navigate', (e, id: number, url: string) =>
     shellFor(e)?.tabs.navigateTab(id, url)

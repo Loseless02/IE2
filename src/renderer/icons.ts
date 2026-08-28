@@ -19,6 +19,8 @@ const PATHS: Record<string, string> = {
   // --- navigation ------------------------------------------------------------
   back: '<path d="M15 18l-6-6 6-6"/>',
   forward: '<path d="M9 18l6-6-6-6"/>',
+  up: '<path d="M18 15l-6-6-6 6"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
   reload: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
   home:

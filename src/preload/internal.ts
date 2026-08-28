@@ -4,6 +4,7 @@ import type {
   HistoryHit,
   ImportResult,
   ImportSource,
+  ReaderArticle,
   RecallStats,
   UpdateState
 } from '../shared/types'
@@ -30,6 +31,17 @@ if (window.location.protocol === 'ie2:') {
     forget: (url: string): Promise<void> => ipcRenderer.invoke('internal:forget', url),
     forgetEverything: (alsoCookies = false): Promise<void> =>
       ipcRenderer.invoke('internal:forget-all', alsoCookies),
+
+    /** Where you went, without what you read. */
+    forgetVisits: (urls: string[]): Promise<number> =>
+      ipcRenderer.invoke('internal:forget-visit', urls),
+    forgetHistory: (): Promise<number> => ipcRenderer.invoke('internal:forget-history'),
+    history: (
+      query: string,
+      limit: number,
+      offset: number
+    ): Promise<{ rows: HistoryHit[]; total: number }> =>
+      ipcRenderer.invoke('internal:history', query, limit, offset),
     getSettings: (): Promise<Settings> => ipcRenderer.invoke('internal:settings-get'),
     setSetting: (key: string, value: unknown): Promise<Settings> =>
       ipcRenderer.invoke('internal:settings-set', key, value),
@@ -39,6 +51,10 @@ if (window.location.protocol === 'ie2:') {
     /** Whether Windows currently opens links with IE2, and asking to change it. */
     isDefaultBrowser: (): Promise<boolean> => ipcRenderer.invoke('internal:default-browser'),
     makeDefaultBrowser: (): Promise<boolean> => ipcRenderer.invoke('internal:make-default'),
+
+    /** The article reader mode extracted for this tab. */
+    readerArticle: (): Promise<ReaderArticle | null> =>
+      ipcRenderer.invoke('internal:reader-article'),
 
     /** The newest section of the changelog that shipped with this build. */
     changelog: (): Promise<{ version: string; lines: string[] }> =>
@@ -107,12 +123,20 @@ export type InternalApi = {
   recent: (limit?: number) => Promise<HistoryHit[]>
   forget: (url: string) => Promise<void>
   forgetEverything: (alsoCookies?: boolean) => Promise<void>
+  forgetVisits: (urls: string[]) => Promise<number>
+  forgetHistory: () => Promise<number>
+  history: (
+    query: string,
+    limit: number,
+    offset: number
+  ) => Promise<{ rows: HistoryHit[]; total: number }>
   getSettings: () => Promise<Settings>
   setSetting: (key: string, value: unknown) => Promise<Settings>
   resetSettings: () => Promise<Settings>
   restart: () => Promise<void>
   isDefaultBrowser: () => Promise<boolean>
   makeDefaultBrowser: () => Promise<boolean>
+  readerArticle: () => Promise<ReaderArticle | null>
   changelog: () => Promise<{ version: string; lines: string[] }>
   updateState: () => Promise<UpdateState>
   checkForUpdate: () => Promise<UpdateState>

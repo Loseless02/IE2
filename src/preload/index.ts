@@ -25,6 +25,19 @@ const api = {
   screenshot: (): Promise<ScreenshotResult | null> => ipcRenderer.invoke('page:screenshot'),
   saveScreenshot: (): Promise<string | null> => ipcRenderer.invoke('page:screenshot-save'),
   pictureInPicture: (): Promise<string> => ipcRenderer.invoke('page:pip'),
+  /** Find in page. Results arrive on onFindResult as Chromium counts them. */
+  find: (text: string, options?: { forward?: boolean; findNext?: boolean }): Promise<boolean> =>
+    ipcRenderer.invoke('page:find', text, options),
+  stopFind: (): Promise<void> => ipcRenderer.invoke('page:find-stop'),
+  onFindResult: (callback: (result: { matches: number; active: number }) => void): void => {
+    ipcRenderer.on('browser:find-result', (_e, result) => callback(result))
+  },
+  onOpenFind: (callback: () => void): void => {
+    ipcRenderer.on('browser:open-find', () => callback())
+  },
+
+  /** Reader mode: strip the page back to the article, or return to it. */
+  readerMode: (): Promise<boolean> => ipcRenderer.invoke('page:reader'),
   media: (): Promise<MediaState | null> => ipcRenderer.invoke('page:media'),
   saveQr: (dataUrl: string, host: string): Promise<string | null> =>
     ipcRenderer.invoke('page:save-qr', dataUrl, host),

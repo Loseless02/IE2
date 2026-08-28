@@ -6,6 +6,7 @@ import { EN } from '../shared/i18n'
 import {
   BOOKMARKS_URL,
   HELP_URL,
+  HISTORY_URL,
   SETTINGS_URL,
   type BrowserState,
   type ClosedTab,
@@ -55,6 +56,9 @@ const bmList = el('bm-list')
 const shotPreview = el<HTMLImageElement>('shot-preview')
 const shotInfo = el('shot-info')
 const suggestionsEl = el('suggestions')
+const findBar = el('find-bar')
+const findInput = el<HTMLInputElement>('find-input')
+const findCount = el('find-count')
 const groupPanel = el('group-panel')
 const groupNameInput = el<HTMLInputElement>('group-name')
 const groupColoursEl = el('group-colours')
@@ -785,6 +789,12 @@ function buildPaletteItems(): PaletteItem[] {
     { group: msg('palette.groupPage'), label: 'Reload', keys: 'Ctrl+R', run: () => window.browser.reload() },
     {
       group: msg('palette.groupPage'),
+      label: msg('find.placeholder'),
+      keys: 'Ctrl+F',
+      run: () => openFind()
+    },
+    {
+      group: msg('palette.groupPage'),
       label: state.bookmarked ? 'Remove bookmark' : 'Bookmark this page',
       keys: 'Ctrl+D',
       run: () => window.browser.toggleBookmark()
@@ -814,6 +824,11 @@ function buildPaletteItems(): PaletteItem[] {
       group: msg('palette.groupOpen'),
       label: msg('toolbar.bookmarks'),
       run: () => window.browser.createTab(BOOKMARKS_URL)
+    },
+    {
+      group: msg('palette.groupOpen'),
+      label: msg('toolbar.history'),
+      run: () => window.browser.createTab(HISTORY_URL)
     },
     {
       group: msg('palette.groupOpen'),
@@ -1119,6 +1134,7 @@ function drawIcons(): void {
     ['install', 'install'],
     ['copy-link', 'link'],
     ['screenshot', 'camera'],
+    ['reader', 'text'],
     ['pip', 'pip'],
     ['split', 'split'],
     ['qr', 'qr'],
@@ -1130,6 +1146,9 @@ function drawIcons(): void {
     ['settings', 'settings'],
     ['devtools', 'devtools'],
     ['help', 'help'],
+    ['find-prev', 'up'],
+    ['find-next', 'down'],
+    ['find-close', 'close'],
     ['media-back', 'back10'],
     ['media-forward', 'forward10']
   ] as [string, string][]) {
@@ -1163,6 +1182,11 @@ function applyStaticText(): void {
   paletteInput.placeholder = msg('palette.placeholder')
   el('palette-footer').textContent = msg('palette.hint')
   el('dropdown-footer').textContent = msg('omnibox.footer')
+
+  findInput.placeholder = msg('find.placeholder')
+  el('find-prev').title = `${msg('find.previous')} (Shift+Enter)`
+  el('find-next').title = `${msg('find.next')} (Enter)`
+  el('find-close').title = `${msg('panel.close')} (Esc)`
 
   el('dl-clear').textContent = msg('panel.clearFinished')
   el('shot-close').textContent = msg('panel.close')
@@ -1248,6 +1272,14 @@ function applySettings(): void {
 
 function render(next: BrowserState | null): void {
   if (!next) return
+
+  // A count describes one page. Switching tabs, or navigating the one in front,
+  // leaves it describing something nobody is looking at, so the search is
+  // dropped and the field left ready to run again on what is now there.
+  const nextUrl = next.tabs.find((tab) => tab.id === next.activeTabId)?.url ?? ''
+  if (findOpen && (next.activeTabId !== state.activeTabId || nextUrl !== findPageUrl)) resetFind()
+  findPageUrl = nextUrl
+
   state = next
   if (next.messages) messages = next.messages
   applySettings()
@@ -1404,6 +1436,11 @@ function syncPanels(): void {
   const showQr = qrOpen && !showDropdown && !showPalette
   const showGroup = openGroupId !== null && !showPalette
 
+  // The find bar is not part of the popover set: it stays put while the omnibox
+  // dropdown or a panel opens over the same strip, because closing it would
+  // throw away the search Chromium is still holding on the page.
+  findBar.hidden = !findOpen
+
   palette.hidden = !showPalette
   dropdown.hidden = !showDropdown
   downloadsPanel.hidden = !showDownloads
@@ -1450,10 +1487,13 @@ function syncPanels(): void {
     if (chip) place(groupPanel, chip, 240, 'left')
   }
 
+  if (findOpen) place(findBar, el('toolbar'), 340, 'right')
+
   // 78px of offset for the panel top, plus a little breathing room below it.
   const groupHeight = showGroup ? groupPanel.offsetHeight + 52 : 0
   const panelHeight = visible ? visible.offsetHeight + 86 : 0
-  window.browser.setDropdownHeight(Math.max(panelHeight, groupHeight))
+  const findHeight = findOpen ? findBar.offsetHeight + 86 : 0
+  window.browser.setDropdownHeight(Math.max(panelHeight, groupHeight, findHeight))
 }
 
 function countCard(n: number, label: string): HTMLElement {
@@ -1755,6 +1795,11 @@ amnesiaBtn.addEventListener('click', () => window.browser.createAmnesiaTab())
 el('devtools').addEventListener('click', () => window.browser.toggleDevTools())
 el('help').addEventListener('click', () => window.browser.createTab(HELP_URL))
 el('home').addEventListener('click', () => window.browser.goHome())
+
+el('reader').addEventListener('click', async () => {
+  const ok = await window.browser.readerMode()
+  if (!ok) toast(msg('toolbar.readerNothing'))
+})
 
 el('copy-link').addEventListener('click', async () => {
   const url = await window.browser.copyLink()
@@ -2132,6 +2177,113 @@ paletteInput.addEventListener('blur', () => {
 })
 
 window.browser.onOpenPalette(() => void openPalette())
+
+/**
+ * Find in page (Ctrl+F).
+ *
+ * Chromium does the searching, the highlighting and the scrolling; all this
+ * does is drive `findInPage` and show the counts it sends back. The counts
+ * arrive on an event rather than as a return value — Chromium refines them as
+ * it walks the document — so the last message for a query wins.
+ */
+let findOpen = false
+
+/** Matches for what is currently typed, as Chromium last reported them. */
+let findMatches = 0
+let findActive = 0
+
+/** The page the counts belong to, so a navigation can invalidate them. */
+let findPageUrl = ''
+
+function renderFindCount(): void {
+  const query = findInput.value
+  const has = findMatches > 0
+
+  findCount.textContent = !query ? '' : has ? `${findActive}/${findMatches}` : msg('find.none')
+  findCount.classList.toggle('empty', Boolean(query) && !has)
+  findBar.classList.toggle('no-match', Boolean(query) && !has)
+
+  const dead = !query || !has
+  el<HTMLButtonElement>('find-prev').disabled = dead
+  el<HTMLButtonElement>('find-next').disabled = dead
+}
+
+/** Drop the highlight and the counts, keeping the bar and whatever is typed. */
+function resetFind(): void {
+  findMatches = 0
+  findActive = 0
+  void window.browser.stopFind()
+  renderFindCount()
+}
+
+function runFind(findNext: boolean, forward = true): void {
+  const query = findInput.value
+
+  if (!query) {
+    resetFind()
+    return
+  }
+
+  void window.browser.find(query, { forward, findNext })
+}
+
+function openFind(): void {
+  const wasOpen = findOpen
+  findOpen = true
+  syncPanels()
+
+  // Ctrl+F on an already-open bar selects what is there, the way every other
+  // browser does, so a second search can be typed straight over the first.
+  findInput.focus()
+  findInput.select()
+
+  if (!wasOpen && findInput.value) runFind(false)
+}
+
+function closeFind(): void {
+  if (!findOpen) return
+  findOpen = false
+  findMatches = 0
+  findActive = 0
+  void window.browser.stopFind()
+  syncPanels()
+}
+
+findInput.addEventListener('input', () => {
+  // A changed query starts over rather than stepping on from the last match.
+  runFind(false)
+  if (!findInput.value) renderFindCount()
+})
+
+findInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    runFind(true, !event.shiftKey)
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    closeFind()
+  }
+})
+
+el('find-prev').addEventListener('click', () => {
+  runFind(true, false)
+  findInput.focus()
+})
+
+el('find-next').addEventListener('click', () => {
+  runFind(true, true)
+  findInput.focus()
+})
+
+el('find-close').addEventListener('click', closeFind)
+
+window.browser.onOpenFind(openFind)
+
+window.browser.onFindResult((result) => {
+  findMatches = result.matches
+  findActive = result.active
+  renderFindCount()
+})
 
 /**
  * Focusing the omnibox has to survive the page that is loading behind it:

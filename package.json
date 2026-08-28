@@ -1,6 +1,6 @@
 {
   "name": "internet-explorer-2",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A browser that remembers every page you read",
   "main": "./out/main/index.js",
   "author": "Loseless02",

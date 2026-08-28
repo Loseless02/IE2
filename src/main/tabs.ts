@@ -143,6 +143,7 @@ export type Shortcut =
   | 'split'
   | 'group-new-tab'
   | 'group-close'
+  | 'find'
 
 /**
  * Once a tab is focused, key presses go to the page, not to our chrome UI — so
@@ -187,6 +188,8 @@ function shortcutFor(input: Electron.Input): Shortcut | null {
       return 'reload'
     case 'd':
       return 'bookmark'
+    case 'f':
+      return 'find'
     case 'k':
       return 'palette'
     default:

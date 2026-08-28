@@ -133,6 +133,7 @@ export const EN_SETTINGS: Record<string, string> = {
   'ui.recall-search-box-xws7': "Recall search box",
   'ui.recent-visits-166o': "Recent visits",
   'ui.record-history-1qtq': "Record history",
+  'ui.remove-from-history-what-the-page-said-is-ke-1eh6': "Remove from history. What the page said is kept.",
   'ui.remove-this-colour-vv08': "Remove this colour",
   'ui.renders-any-site-in-comic-sans-with-outset-g-1cl1': "Renders any site in Comic Sans with outset grey buttons and pixelated images, while telling the server it is Internet Explorer 6. It is a period-accurate reconstruction of the browsing experience being commemorated here. It has no legitimate use. It is a button in your toolbar.",
   'ui.requests-the-blocker-stopped-all-time-1iew': "Requests the blocker stopped, all time.",

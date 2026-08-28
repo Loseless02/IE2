@@ -78,7 +78,7 @@ export function handleInternalProtocol(partitions: string[]): void {
 }
 
 /** Hostnames that map to a real internal page. Anything else 404s. */
-const PAGES = new Set(['home', 'help', 'settings', 'translate', 'bookmarks'])
+const PAGES = new Set(['home', 'help', 'settings', 'translate', 'bookmarks', 'history', 'reader'])
 
 /** Host that serves the chosen wallpaper, and nothing else on disk. */
 const WALLPAPER_HOST = 'wallpaper'

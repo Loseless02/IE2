@@ -34,6 +34,7 @@
       </div>
       <button id="copy-link" title="Copy this page's address"></button>
       <button id="screenshot" title="Screenshot (Ctrl+Shift+S)"></button>
+      <button id="reader" title="Reader mode — just the article"></button>
       <button id="pip" title="Picture in picture (Ctrl+Shift+I)"></button>
       <button id="split" title="Split view (Ctrl+Shift+E)"></button>
       <button id="qr" title="QR code for this page"></button>
@@ -72,6 +73,21 @@
         <button id="group-ungroup"><span>Ungroup</span></button>
         <button id="group-close" class="danger"><span>Close group</span><kbd>Shift+Alt+W</kbd></button>
       </div>
+    </div>
+
+    <!-- Ctrl+F. Chromium does the searching; this only drives it. -->
+    <div id="find-bar" hidden>
+      <input
+        id="find-input"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Find in page"
+      />
+      <span id="find-count"></span>
+      <button id="find-prev" title="Previous match (Shift+Enter)"></button>
+      <button id="find-next" title="Next match (Enter)"></button>
+      <button id="find-close" title="Close (Esc)"></button>
     </div>
 
     <!-- Brief confirmations: copied, saved, nothing to float. -->

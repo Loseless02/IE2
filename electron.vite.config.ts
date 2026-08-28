@@ -60,7 +60,9 @@ export default defineConfig({
           help: resolve(__dirname, 'src/renderer/help.html'),
           settings: resolve(__dirname, 'src/renderer/settings.html'),
           translate: resolve(__dirname, 'src/renderer/translate.html'),
-          bookmarks: resolve(__dirname, 'src/renderer/bookmarks.html')
+          bookmarks: resolve(__dirname, 'src/renderer/bookmarks.html'),
+          history: resolve(__dirname, 'src/renderer/history.html'),
+          reader: resolve(__dirname, 'src/renderer/reader.html')
         }
       }
     }
