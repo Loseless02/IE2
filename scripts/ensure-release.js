@@ -26,7 +26,9 @@ const repo = (config.match(/^\s*repo:\s*(.+)$/m) || [])[1]?.trim()
 // config to have releases go live as they finish uploading instead.
 const releaseType = (config.match(/^\s*releaseType:\s*(.+)$/m) || [])[1]?.trim() ?? 'draft'
 
-const token = process.env.GH_TOKEN
+const { githubToken } = require('./token')
+
+const token = githubToken()
 const tag = `v${version}`
 
 function fail(message) {
@@ -34,7 +36,7 @@ function fail(message) {
   process.exit(1)
 }
 
-if (!token) fail('GH_TOKEN is not set.')
+if (!token) fail('No GitHub token. Put GH_TOKEN=... in .env, or set $env:GH_TOKEN.')
 if (!owner || !repo) fail('Could not read owner/repo from electron-builder.yml.')
 
 const api = `https://api.github.com/repos/${owner}/${repo}`

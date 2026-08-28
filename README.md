@@ -60,7 +60,10 @@ release is how anyone other than you gets a new version.
    `## <version>` heading. The browser reads that section to show what changed,
    once, after updating.
 2. Bump `version` in `package.json`.
-3. Set a GitHub token with `repo` scope, then publish:
+3. Give the scripts a GitHub token, once: copy `.env.example` to `.env` and put a
+   token with `repo` scope in it. `.env` is gitignored. `GH_TOKEN` in the
+   environment is used first if it is set, for CI.
+4. Publish:
 
 ```bash
 npm run release
@@ -71,7 +74,7 @@ That creates the draft release, then builds and uploads both installers **and
 copies never see the release no matter what is attached to it. `npm run dist`
 builds the same files without uploading anything.
 
-4. Open the draft on GitHub, check all three files are attached, and **Publish
+5. Open the draft on GitHub, check all three files are attached, and **Publish
    release**. A draft is invisible to the updater and does not appear on the
    repository's front page.
 

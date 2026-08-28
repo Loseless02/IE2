@@ -8,6 +8,7 @@
 const { spawnSync, execSync } = require('node:child_process')
 const { existsSync, readdirSync, statSync, rmSync, readFileSync } = require('node:fs')
 const { join } = require('node:path')
+const { githubToken, tokenSource } = require('./token')
 
 const root = join(__dirname, '..')
 const dist = join(root, 'dist')
@@ -41,9 +42,14 @@ function runningInstances() {
   }
 }
 
-function run(label, command, args) {
+function run(label, command, args, env) {
   console.log(dim(`  → ${label}`))
-  const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', shell: true })
+  const result = spawnSync(command, args, {
+    cwd: root,
+    stdio: 'inherit',
+    shell: true,
+    ...(env ? { env: { ...process.env, ...env } } : {})
+  })
   if (result.status !== 0) fail(`${label} failed with exit code ${result.status}.`)
 }
 
@@ -81,23 +87,33 @@ if (existsSync(staleTemp)) rmSync(staleTemp, { recursive: true, force: true })
 // to compare against and will never see the release.
 const publishing = process.argv.includes('--publish')
 
-if (publishing && !process.env.GH_TOKEN) {
+// From the environment or from .env; see scripts/token.js. electron-builder
+// and ensure-release read it out of the environment, so a token that came from
+// the file is put there for the children rather than passed along by hand.
+const token = publishing ? githubToken() : null
+
+if (publishing && !token) {
   fail(
-    'Publishing needs a GitHub token in GH_TOKEN.',
-    'Create one with `repo` scope, then: $env:GH_TOKEN = "…"  (PowerShell)'
+    'Publishing needs a GitHub token.',
+    'Put GH_TOKEN=ghp_… in a .env file in this folder (gitignored), or set $env:GH_TOKEN.'
   )
 }
 
+const publishEnv = token ? { GH_TOKEN: token } : undefined
+
+if (publishing) console.log(dim(`  token from ${tokenSource()}`))
+
 // Create the release first, so the two target publishers cannot each create
 // their own and split the assets between them. See scripts/ensure-release.js.
-if (publishing) run('Preparing the release', 'node', ['scripts/ensure-release.js'])
+if (publishing) run('Preparing the release', 'node', ['scripts/ensure-release.js'], publishEnv)
 
 run(
   publishing ? 'Packaging and publishing' : 'Packaging',
   'npx',
   publishing
     ? ['electron-builder', '--win', '--publish', 'always']
-    : ['electron-builder', '--win']
+    : ['electron-builder', '--win'],
+  publishEnv
 )
 
 // --- 3. prove the artifacts are new ----------------------------------------

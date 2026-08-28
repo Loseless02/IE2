@@ -17,3 +17,8 @@ Thumbs.db
 
 # Personal notes, not for the repo.
 .fordev.md
+
+# The GitHub token the release script reads. Never commit this.
+.env
+.env.*
+!.env.example
