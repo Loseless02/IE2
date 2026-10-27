@@ -184,6 +184,43 @@ if (stale.length > 0) {
   )
 }
 
+// --- 4. prove the installer is whole ---------------------------------------
+//
+// NSIS is compiled twice: first a ~200 KB stub that only writes the
+// uninstaller, then the real installer over the same path. A build interrupted
+// between the two leaves the stub as IE2-Setup-<version>.exe, newly written and
+// so not stale — and running it does nothing visible at all. latest.yml is
+// written last with the real installer's size and hash, so the two must agree.
+
+const installer = expected.find((name) => name.includes('Setup'))
+const latestYml = join(dist, 'latest.yml')
+
+if (installer) {
+  if (!existsSync(latestYml) || statSync(latestYml).mtimeMs < startedAt) {
+    fail('latest.yml was not rewritten, so the installer cannot be checked.', 'Scroll up for a line starting with ⨯.')
+  }
+
+  const yml = readFileSync(latestYml, 'utf8')
+  const field = (key) => (yml.match(new RegExp(`^${key}:\\s*'?([^'\\r\\n]+)'?`, 'm')) || [])[1]?.trim()
+
+  const bytes = readFileSync(join(dist, installer))
+  const sha512 = require('node:crypto').createHash('sha512').update(bytes).digest('base64')
+
+  if (field('version') !== version || field('path') !== installer) {
+    fail(`latest.yml describes ${field('path')} ${field('version')}, not ${installer}.`)
+  }
+  // size sits under `files:`, indented, so it is not one of the top-level fields.
+  if (!yml.includes(`size: ${bytes.length}`)) {
+    fail(
+      `${installer} is ${(bytes.length / 1024 / 1024).toFixed(1)} MB, not the size latest.yml records.`,
+      'The installer was cut short — probably an interrupted build. Run this again.'
+    )
+  }
+  if (field('sha512') !== sha512) {
+    fail(`${installer} does not match the hash in latest.yml.`, 'The installer was cut short or changed after building. Run this again.')
+  }
+}
+
 const leftovers = exes.filter((name) => !expected.includes(name))
 
 console.log('')

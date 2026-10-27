@@ -4,13 +4,16 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
-## 0.4.0
+## 0.4.1
 
 - Updating is one button: Check for updates downloads whatever it finds, then
   asks before restarting — and says what survives a restart and what does not
 - Updates install silently and IE2 opens again by itself, instead of walking
   you through the installer as if setting it up for the first time
 - Fixed: restarting to install an update lost your open tabs
+
+## 0.4.0
+
 - Find in this page with Ctrl+F — Enter for the next match, Shift+Enter for the
   one before, Esc to close
 - A history page at ie2://history: everywhere you have been, by day, with search.
