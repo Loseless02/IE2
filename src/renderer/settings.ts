@@ -166,7 +166,40 @@ function updateRow(): HTMLElement {
   wrap.className = 'stack'
   wrap.append(status, button)
 
+  /**
+   * Set when the user pressed Check: once the download it started finishes,
+   * they are asked about restarting rather than left to notice the button
+   * changed. A download that finishes with nobody waiting on it just waits.
+   */
+  let askWhenReady = false
+  let asking = false
+
+  /** The warning before restarting. Restarting is fine; losing typing is not. */
+  const offerInstall = async (version: string): Promise<void> => {
+    if (asking) return
+    asking = true
+
+    const ok = await confirmDialog({
+      title: `${t('Restart to update to')} ${version}?`,
+      body: [
+        t('IE2 will close, install the update, and open again by itself. It takes a few seconds.'),
+        t('Your tabs come back, and you stay signed in to sites. Bookmarks, history and settings are all kept. Amnesia tabs do not come back — that is what they are for.'),
+        t('Anything typed into a page and not yet sent or saved — a message, a form, a document in a web app — will be lost. Finish those first.')
+      ],
+      confirmLabel: t('Restart now'),
+      cancelLabel: t('Later')
+    })
+
+    asking = false
+    if (ok) await window.ie2.installUpdate()
+  }
+
   const paint = (state: UpdateState): void => {
+    if (state.status === 'ready' && askWhenReady) {
+      askWhenReady = false
+      void offerInstall(state.version ?? '')
+    }
+
     const labels: Record<UpdateState['status'], string> = {
       idle: t('Check for updates'),
       checking: `${t('Checking')}…`,
@@ -184,7 +217,7 @@ function updateRow(): HTMLElement {
       current: t('You have the latest version.'),
       available: `${t('Version')} ${state.version} ${t('is available.')}`,
       downloading: t('Downloading…'),
-      ready: `${t('Version')} ${state.version} ${t('is ready to install.')}`,
+      ready: `${t('Version')} ${state.version} ${t('is ready. It installs when you restart, or the next time you close IE2.')}`,
       error: state.message || t('Could not check.'),
       // A portable build is one file with nothing to install over.
       unsupported: t('This build cannot update itself. Download the new one.')
@@ -202,11 +235,16 @@ function updateRow(): HTMLElement {
       window.ie2.open('https://github.com/Loseless02/IE2/releases/latest')
       return
     }
-    if (state.status === 'available') return void window.ie2.downloadUpdate()
-    if (state.status === 'ready') return void window.ie2.installUpdate()
+    if (state.status === 'available') {
+      askWhenReady = true
+      return void window.ie2.downloadUpdate()
+    }
+    if (state.status === 'ready') return void offerInstall(state.version ?? '')
 
     // Say so immediately. The check can take a few seconds against GitHub, and
-    // a button that does nothing visible reads as a broken button.
+    // a button that does nothing visible reads as a broken button. Anything it
+    // finds downloads by itself, and the question comes when that is done.
+    askWhenReady = true
     paint({ ...state, status: 'checking' })
     paint(await window.ie2.checkForUpdate())
   })

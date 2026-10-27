@@ -62,6 +62,13 @@ export function initUpdater(): void {
       notes: typeof info.releaseNotes === 'string' ? info.releaseNotes : '',
       progress: 0
     })
+
+    // Pressing "Check for updates" is asking for the update, so it comes down
+    // straight away. The check made quietly at startup only reports.
+    if (downloadWhenFound) {
+      downloadWhenFound = false
+      void download()
+    }
   })
 
   autoUpdater.on('update-not-available', () => set({ status: 'current', progress: 0 }))
@@ -88,12 +95,22 @@ export function initUpdater(): void {
   if (getSettings().autoUpdate) setTimeout(() => void check(), 8000)
 }
 
-/** Ask GitHub what the latest release is. Safe to call when it cannot work. */
-export async function check(): Promise<UpdateState> {
+/** Set by a check the user asked for, so a found update downloads at once. */
+let downloadWhenFound = false
+
+/**
+ * Ask GitHub what the latest release is. Safe to call when it cannot work.
+ *
+ * `manual` is a check the user pressed the button for: an update it finds is
+ * downloaded straight away rather than waiting for a second press.
+ */
+export async function check(manual = false): Promise<UpdateState> {
   if (!canSelfUpdate()) {
     set({ status: 'unsupported' })
     return state
   }
+
+  downloadWhenFound = manual
 
   try {
     await autoUpdater.checkForUpdates()
@@ -115,10 +132,17 @@ export async function download(): Promise<void> {
   }
 }
 
-/** Close every window and let the installer take over. */
+/**
+ * Close every window, install, and start again.
+ *
+ * Silent, and relaunching afterwards. Left to its defaults this runs the full
+ * installer wizard — the same pages as a first install, asking where to put a
+ * browser that is already installed — and then leaves you at the desktop.
+ * An update should look like the browser blinking, not like setting it up again.
+ */
 export function installNow(): void {
   if (state.status !== 'ready') return
-  autoUpdater.quitAndInstall()
+  autoUpdater.quitAndInstall(true, true)
 }
 
 /**

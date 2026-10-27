@@ -30,13 +30,28 @@ function fail(message, hint) {
   process.exit(1)
 }
 
-/** Running instances hold win-unpacked open, and the build cannot replace it. */
+/**
+ * Running copies of the build in dist hold win-unpacked open, and the build
+ * cannot replace it.
+ *
+ * Only copies running *from dist* count. The installed browser is also called
+ * IE2.exe, and if it is the one you browse with, matching on the name alone
+ * would refuse every build until you closed your own browser — which the build
+ * has no reason to need.
+ */
 function runningInstances() {
   if (process.platform !== 'win32') return 0
 
   try {
-    const out = execSync(`tasklist /FI "IMAGENAME eq ${APP}.exe" /NH`, { encoding: 'utf8' })
-    return out.split('\n').filter((line) => line.includes(`${APP}.exe`)).length
+    const out = execSync(
+      `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name='${APP}.exe'\\" | ForEach-Object { $_.ExecutablePath }"`,
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    const inDist = dist.toLowerCase()
+    return out
+      .split(/\r?\n/)
+      .map((line) => line.trim().toLowerCase())
+      .filter((path) => path && path.startsWith(inDist)).length
   } catch {
     return 0
   }
@@ -62,7 +77,7 @@ if (running > 0) {
     // window count — saying "11 copies" would send you hunting for ten
     // windows that do not exist.
     `${APP} is still running (${running} processes).`,
-    'Close every window (including installed web apps) and run this again.'
+    'Close the copy launched from dist (and any web apps it opened), then run this again. The installed browser can stay open.'
   )
 }
 

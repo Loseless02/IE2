@@ -1,3 +1,5 @@
+// Before everything else: decides which profile folder this copy uses.
+import { APP_USER_MODEL_ID } from './profile'
 import {
   app,
   BaseWindow,
@@ -298,7 +300,9 @@ function createWindow(startUrl?: string): void {
   // Only the last window standing writes the session, or closing one window
   // would replace the restore list with just that window's tabs.
   win.on('close', () => {
-    if (shells.size !== 1) return
+    // A quit started by the app itself has already saved the session, and has
+    // closed the database by the time the windows close. See before-quit.
+    if (quitting || shells.size !== 1) return
     const snapshot = shell.tabs.snapshot()
     saveSession(snapshot.tabs, snapshot.activeIndex, snapshot.groups)
   })
@@ -720,7 +724,7 @@ function registerInternalIpc(): void {
 
   ipcMain.handle('internal:changelog', fromInternalPage(() => latestChanges()))
   ipcMain.handle('internal:update-state', fromInternalPage(() => updateState()))
-  ipcMain.handle('internal:update-check', fromInternalPage(() => check()))
+  ipcMain.handle('internal:update-check', fromInternalPage(() => check(true)))
   ipcMain.handle('internal:update-download', fromInternalPage(() => download()))
   ipcMain.handle('internal:update-install', fromInternalPage(() => installNow()))
 
@@ -1080,7 +1084,7 @@ for (const stream of [process.stdout, process.stderr]) {
 // Must run before the app is ready.
 registerInternalScheme()
 
-app.setAppUserModelId('com.internetexplorer2.browser')
+app.setAppUserModelId(APP_USER_MODEL_ID)
 
 /**
  * One browser, however many links are clicked.
@@ -1162,7 +1166,28 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+/**
+ * Set once the app has started quitting, so nothing writes to the database
+ * after it is closed.
+ */
+let quitting = false
+
 app.on('before-quit', () => {
+  // Closing the last window saves the session on the way out, and only then
+  // does the app quit. A quit the app starts itself — restarting to install an
+  // update — runs the other way round: this fires first, while every window is
+  // still open, and closes the database before any of them get to save. The
+  // tabs would be gone after the update. So the session is saved here, from the
+  // window last in use, before anything is shut.
+  if (!quitting) {
+    const shell = focusedShell()
+    if (shell) {
+      const snapshot = shell.tabs.snapshot()
+      saveSession(snapshot.tabs, snapshot.activeIndex, snapshot.groups)
+    }
+  }
+
+  quitting = true
   flush()
   closeDb()
 })
