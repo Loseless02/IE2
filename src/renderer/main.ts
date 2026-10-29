@@ -15,6 +15,8 @@ import {
   type BrowserState,
   type ClosedTab,
   type DownloadState,
+  type ExtensionInfo,
+  type ExtensionInstallRequest,
   type MediaState,
   type PasswordOffer,
   type PasswordsForPage,
@@ -29,6 +31,7 @@ import {
 import { GROUP_COLOUR_IDS, groupColour } from '../shared/groups'
 import { cleanFx, isNeutral, type AudioFxPreset } from '../shared/audiofx'
 import { createFxPanel } from './fxpanel'
+import { anchorOf, createExtPanel, extensionIcon } from './extpanel'
 import { setSwitch } from './switch'
 import {
   PRESETS as MOOD_PRESETS,
@@ -166,6 +169,8 @@ let bmEditOpen = false
 let ipOpen = false
 /** The audio effects panel, and the presets saved for it. */
 let fxOpen = false
+let extOpen = false
+let darkOpen = false
 let fxPresets: AudioFxPreset[] = []
 /** The password manager's panel under the key. */
 let pwOpen = false
@@ -173,6 +178,8 @@ let pwOpen = false
 let siteOpen = false
 /** Questions from sites, oldest first. One is shown at a time. */
 let permQueue: PermissionRequest[] = []
+/** The Chrome Web Store asking to add an extension, until it is answered. */
+let installRequest: ExtensionInstallRequest | null = null
 let moodOpen = false
 /** The tab and address the key in the omnibox was last worked out for. */
 let lastPasswordTab: number | null = null
@@ -1277,6 +1284,8 @@ function drawIcons(): void {
     ['media', 'music'],
     ['mood', 'mood'],
     ['fx', 'fx'],
+    ['extensions', 'puzzle'],
+    ['dark', 'moon'],
     ['site-perms', 'lock'],
     ['pw-key', 'key'],
     ['passwords', 'key'],
@@ -1438,6 +1447,9 @@ function applySettings(): void {
   el('ip').hidden = !settings.showIpButton
   el('passwords').hidden = !settings.showPasswordsButton
   el('fx').hidden = !settings.showFxButton
+  el('extensions').hidden = !settings.showExtensionsButton
+  el('dark').hidden = !settings.showDarkButton
+  drawDark()
   fxPresets = (Array.isArray(settings.audioPresets) ? settings.audioPresets : []).map((preset) => ({
     ...cleanFx(preset),
     name: String(preset?.name ?? 'Preset').slice(0, 30)
@@ -1625,8 +1637,11 @@ function syncPanels(): void {
   const showSite = siteOpen && !showDropdown && !showPalette
   const showPw = pwOpen && !showDropdown && !showPalette
   const showFx = fxOpen && !showDropdown && !showPalette
+  const showExt = extOpen && !showDropdown && !showPalette
+  const showDark = darkOpen && !showDropdown && !showPalette
   // A site's question stays up until it is answered, whatever else opens.
   const showPerm = permQueue.length > 0 && !showPalette && !showDropdown
+  const showInstall = installRequest !== null && !showPalette && !showDropdown
   const showMedia = mediaOpen && !showDropdown && !showPalette
   const showQr = qrOpen && !showDropdown && !showPalette
   const showGroup = openGroupId !== null && !showPalette
@@ -1642,7 +1657,7 @@ function syncPanels(): void {
   // closes the popover like a press anywhere else.
   const anyOpen =
     showDropdown || showDownloads || showShield || showShot || showBookmarks ||
-    showMedia || showQr || showGroup || showBarFolder || showIp || showMood || showSite || showPerm || showPw || showFx
+    showMedia || showQr || showGroup || showBarFolder || showIp || showMood || showSite || showPerm || showPw || showFx || showExt || showInstall || showDark
   document.documentElement.classList.toggle('popover-open', anyOpen)
 
   palette.hidden = !showPalette
@@ -1657,7 +1672,10 @@ function syncPanels(): void {
   el('site-panel').hidden = !showSite
   el('pw-panel').hidden = !showPw
   el('fx-panel').hidden = !showFx
+  el('ext-panel').hidden = !showExt
+  el('dark-panel').hidden = !showDark
   el('perm-panel').hidden = !showPerm
+  el('ext-install').hidden = !showInstall
   if (!showIp) maskIp()
   mediaPanel.hidden = !showMedia
   qrPanel.hidden = !showQr
@@ -1687,6 +1705,12 @@ function syncPanels(): void {
   } else if (showFx) {
     place(el('fx-panel'), el('fx'), 330, 'right')
     visible = el('fx-panel')
+  } else if (showExt) {
+    place(el('ext-panel'), el('extensions'), 320, 'right')
+    visible = el('ext-panel')
+  } else if (showDark) {
+    place(el('dark-panel'), el('dark'), 300, 'right')
+    visible = el('dark-panel')
   } else if (showPw) {
     place(el('pw-panel'), el('pw-key').hidden ? bookmarkBtn : el('pw-key'), 340, 'right')
     visible = el('pw-panel')
@@ -1731,7 +1755,15 @@ function syncPanels(): void {
   const tipHeight = tipFor ? el('tip').offsetHeight + 86 : 0
   if (showPerm) place(el('perm-panel'), omniboxWrap, 360, 'left')
   const permHeight = showPerm ? el('perm-panel').offsetHeight + 86 : 0
-  window.browser.setDropdownHeight(Math.max(panelHeight, groupHeight, findHeight, tipHeight, permHeight))
+  // Under the extensions button, where the extension is about to live.
+  if (showInstall) {
+    const button = el('extensions')
+    place(el('ext-install'), button.hidden ? el('toolbar') : button, 360, 'right')
+  }
+  const installHeight = showInstall ? el('ext-install').offsetHeight + 86 : 0
+  window.browser.setDropdownHeight(
+    Math.max(panelHeight, groupHeight, findHeight, tipHeight, permHeight, installHeight)
+  )
 }
 
 function countCard(n: number, label: string): HTMLElement {
@@ -2919,7 +2951,9 @@ const TOOL_PANELS: Record<string, string> = {
   mood: 'mood-panel',
   'site-perms': 'site-panel',
   'pw-key': 'pw-panel',
-  fx: 'fx-panel'
+  fx: 'fx-panel',
+  extensions: 'ext-panel',
+  dark: 'dark-panel'
 }
 
 /** Close every tool popover except the one belonging to `keep`, if given. */
@@ -2937,6 +2971,8 @@ function closeToolsExcept(keep: string | null): void {
   if (keep !== 'site-perms') siteOpen = false
   if (keep !== 'pw-key') pwOpen = false
   if (keep !== 'fx') fxOpen = false
+  if (keep !== 'extensions') extOpen = false
+  if (keep !== 'dark') darkOpen = false
   if (keep !== 'mood') moodOpen = false
   if (keep !== 'media' && mediaOpen) {
     mediaOpen = false
@@ -3339,6 +3375,175 @@ el('fx').addEventListener('click', async () => {
 
 window.browser.onAudioFxChanged(() => void refreshFx())
 
+// --- extensions ------------------------------------------------------------
+
+const extPanel = createExtPanel(el('ext-panel'), {
+  list: () => window.browser.extensions(),
+  click: (id, anchor) => void window.browser.clickExtension(id, anchor),
+  menu: (id) => void window.browser.extensionMenu(id),
+  pin: (id, pinned) => void window.browser.pinExtension(id, pinned),
+  store: () => void window.browser.openExtensionStore(),
+  anchor: () => el('extensions'),
+  close: () => {
+    extOpen = false
+    syncPanels()
+  },
+  resized: () => syncPanels()
+})
+
+/** Extensions already here, so one arriving can be announced. Null until the first list. */
+let extensionIds: Set<string> | null = null
+
+/** Pinned extensions sit on the toolbar itself, each with its badge. */
+function drawExtensions(list: ExtensionInfo[]): void {
+  if (extensionIds) {
+    const added = list.find((info) => !extensionIds?.has(info.id))
+    if (added) toast(`${added.name} added. It is under the extensions button.`)
+  }
+  extensionIds = new Set(list.map((info) => info.id))
+
+  const pins = el('ext-pins')
+  pins.replaceChildren()
+  for (const info of list) {
+    if (!info.pinned || !info.enabled) continue
+    const button = document.createElement('button')
+    button.className = 'ext-pin'
+    button.title = info.title
+    button.disabled = info.actionDisabled
+    button.append(extensionIcon(info))
+    button.addEventListener('click', () => {
+      closeToolsExcept(null)
+      void window.browser.clickExtension(info.id, anchorOf(button))
+    })
+    button.addEventListener('contextmenu', (event) => {
+      event.preventDefault()
+      void window.browser.extensionMenu(info.id)
+    })
+    pins.append(button)
+  }
+  // The panel keeps up too, if it is open: a badge changing, a pin moving.
+  if (extOpen) extPanel.draw(list)
+}
+
+el('extensions').addEventListener('click', async () => {
+  if (extOpen) {
+    extOpen = false
+    syncPanels()
+    return
+  }
+  closeToolsExcept('extensions')
+  await extPanel.open()
+  extOpen = true
+  syncPanels()
+})
+
+window.browser.onExtensionsChanged(drawExtensions)
+
+// --- dark mode -------------------------------------------------------------
+
+/** The site the per-site switch is about, as the main process names it: host without www. */
+function darkSite(): string | null {
+  try {
+    const url = new URL(activeTab()?.url ?? '')
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.hostname.replace(/^www\./, '') : null
+  } catch {
+    return null
+  }
+}
+
+/** The button lights when the page in front is dark; the panel shows both switches. */
+function drawDark(): void {
+  const settings = state.settings ?? DEFAULT_SETTINGS
+  const site = darkSite()
+  const off = Array.isArray(settings.darkModeOff) ? settings.darkModeOff : []
+  const siteOn = site !== null && !off.includes(site)
+  el('dark').classList.toggle('on', settings.darkMode && siteOn)
+
+  el<HTMLInputElement>('dark-all').checked = settings.darkMode
+  el('dark-site-row').hidden = site === null
+  el('dark-site-name').textContent = site ? `On for ${site}` : ''
+  const siteSwitch = el<HTMLInputElement>('dark-site')
+  siteSwitch.checked = siteOn
+  siteSwitch.disabled = !settings.darkMode
+}
+
+el('dark').addEventListener('click', () => {
+  if (darkOpen) {
+    darkOpen = false
+    syncPanels()
+    return
+  }
+  closeToolsExcept('dark')
+  drawDark()
+  darkOpen = true
+  syncPanels()
+})
+
+el<HTMLInputElement>('dark-all').addEventListener('change', (event) => {
+  void window.browser.setDarkMode((event.target as HTMLInputElement).checked)
+})
+
+el<HTMLInputElement>('dark-site').addEventListener('change', (event) => {
+  const site = darkSite()
+  if (!site) return
+  const on = (event.target as HTMLInputElement).checked
+  const off = (state.settings?.darkModeOff ?? []).filter((each) => each !== site)
+  void window.browser.setDarkModeOff(on ? off : [...off, site])
+})
+
+function drawInstallRequest(request: ExtensionInstallRequest): void {
+  const image = el<HTMLImageElement>('ext-install-icon')
+  image.hidden = !request.icon
+  if (request.icon) image.src = request.icon
+  // The name is the store's, so it goes in as text.
+  el('ext-install-name').textContent = request.name
+
+  const can = el('ext-install-can')
+  can.replaceChildren()
+  if (request.warnings.length) {
+    const title = document.createElement('div')
+    title.className = 'ext-install-label'
+    title.textContent = 'It will be able to:'
+    const list = document.createElement('ul')
+    for (const warning of request.warnings) {
+      const item = document.createElement('li')
+      item.textContent = warning
+      list.append(item)
+    }
+    can.append(title, list)
+  } else {
+    can.textContent = 'It asks for no special access.'
+  }
+
+  const missing = el('ext-install-missing')
+  missing.hidden = request.missing.length === 0
+  missing.textContent = `Will not work in IE2: ${request.missing.join(', ')}.`
+}
+
+function answerInstall(allow: boolean): void {
+  if (!installRequest) return
+  const { requestId, name } = installRequest
+  installRequest = null
+  syncPanels()
+  void window.browser.answerExtensionInstall(requestId, allow)
+  if (allow) toast(`Adding ${name}…`)
+}
+
+window.browser.onExtensionInstallPrompt((request) => {
+  closeToolsExcept(null)
+  installRequest = request
+  drawInstallRequest(request)
+  syncPanels()
+})
+window.browser.onExtensionInstallDone((requestId) => {
+  if (installRequest?.requestId !== requestId) return
+  installRequest = null
+  syncPanels()
+})
+el('ext-install-add').addEventListener('click', () => answerInstall(true))
+el('ext-install-cancel').addEventListener('click', () => answerInstall(false))
+void window.browser.extensions().then(drawExtensions)
+
 // --- Public IP -------------------------------------------------------------
 
 let ipFound: PublicIp | null = null
@@ -3558,6 +3763,14 @@ const TOOL_INFO: Record<string, ToolInfo> = {
   qr: { name: 'QR code', purpose: 'Shows this page as a code your phone camera can open.' },
   media: { name: 'Now playing', purpose: 'Play, pause and skip whatever this tab is playing.' },
   mood: { name: 'Mood', purpose: 'Rain, wind and thunder in the background, mixed the way you like.' },
+  dark: {
+    name: 'Dark mode',
+    purpose: 'Every website dark, from the first frame: no white flash. Sites with their own dark theme use it.'
+  },
+  extensions: {
+    name: 'Extensions',
+    purpose: 'Your Chrome extensions: open one, pin it beside the address bar, or get more from the Chrome Web Store.'
+  },
   fx: {
     name: 'Audio effects',
     purpose: 'Slowed, reverb, nightcore: change the speed, pitch, reverb and bass of what this tab plays.'

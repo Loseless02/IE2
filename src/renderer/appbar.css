@@ -80,6 +80,13 @@ body {
   width: 330px;
 }
 
+/* Hangs from the bar, under the extensions button. */
+#ext-panel {
+  top: 40px;
+  right: 120px;
+  width: 300px;
+}
+
 #toast {
   position: absolute;
   top: 40px;

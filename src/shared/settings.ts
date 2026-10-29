@@ -124,6 +124,16 @@ export interface Settings {
   showIpButton: boolean
   showPasswordsButton: boolean
   showFxButton: boolean
+  showExtensionsButton: boolean
+  showDarkButton: boolean
+  /** Websites drawn dark — their own dark theme where they have one, darkened where not. */
+  darkMode: boolean
+  /** Sites dark mode is switched off for, by host without `www.`. */
+  darkModeOff: string[]
+  /** Extensions shown on the toolbar itself, by id, in order. */
+  pinnedExtensions: string[]
+  /** Extensions installed but turned off, by id. */
+  disabledExtensions: string[]
   /** Audio effects presets the user saved, after the built-in ones. */
   audioPresets: AudioFxPreset[]
   showCompatButton: boolean
@@ -256,6 +266,12 @@ export const DEFAULT_SETTINGS: Settings = {
   showIpButton: true,
   showPasswordsButton: true,
   showFxButton: true,
+  showExtensionsButton: true,
+  showDarkButton: true,
+  darkMode: false,
+  darkModeOff: [],
+  pinnedExtensions: [],
+  disabledExtensions: [],
   audioPresets: [],
   showCompatButton: true,
   showAmnesiaButton: true,

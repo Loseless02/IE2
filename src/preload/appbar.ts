@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { AudioFx, AudioFxPreset, AudioFxState } from '../shared/audiofx'
 import type { Settings } from '../shared/settings'
+import type { ExtensionInfo } from '../shared/types'
 
 /** What the title bar of an installed app shows about its page. */
 export interface AppBarState {
@@ -33,6 +34,18 @@ const api = {
   onSettings: (callback: (settings: Settings) => void): void => {
     ipcRenderer.on('browser:settings', (_event, settings: Settings) => callback(settings))
   },
+
+  /** Chrome extensions, as the toolbar in front shows them. */
+  extensions: (): Promise<ExtensionInfo[]> => ipcRenderer.invoke('ext:list'),
+  onExtensionsChanged: (callback: (list: ExtensionInfo[]) => void): void => {
+    ipcRenderer.on('ext:changed', (_event, list: ExtensionInfo[]) => callback(list))
+  },
+  /** Its button was clicked; the popup hangs from `anchor`, in window coordinates. */
+  clickExtension: (id: string, anchor: { x: number; y: number; width: number; height: number }): Promise<void> =>
+    ipcRenderer.invoke('ext:click', id, anchor),
+  extensionMenu: (id: string): Promise<void> => ipcRenderer.invoke('ext:menu', id),
+  pinExtension: (id: string, pinned: boolean): Promise<void> => ipcRenderer.invoke('ext:pin', id, pinned),
+  openExtensionStore: (): Promise<void> => ipcRenderer.invoke('ext:store'),
 
   audioFx: (): Promise<AudioFxState | null> => ipcRenderer.invoke('fx:get'),
   setAudioFx: (fx: AudioFx, remember: boolean): Promise<AudioFxState | null> =>

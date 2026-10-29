@@ -38,7 +38,8 @@ const preloads = [
   'src/preload/adblock.ts',
   'src/preload/passwords.ts',
   'src/preload/audiofx.ts',
-  'src/preload/appbar.ts'
+  'src/preload/appbar.ts',
+  'src/preload/extension.ts'
 ]
 
 const wanted = new Set()
@@ -51,7 +52,8 @@ const mainFiles = [
   'src/main/downloads.ts',
   'src/main/tabs.ts',
   'src/main/passwords.ts',
-  'src/main/audiofx.ts'
+  'src/main/audiofx.ts',
+  'src/main/extensions.ts'
 ]
 
 const answered = new Set()

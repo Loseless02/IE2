@@ -56,6 +56,13 @@ import { isAllowedUrl, normalizeInput } from './url'
 import { publicIp } from './publicip'
 import { registerPasswordIpc, registerVaultPageIpc } from './passwords'
 import { registerAudioFxIpc } from './audiofx'
+import { initDarkMode } from './darkmode'
+import {
+  initExtensions,
+  noticeTabs,
+  registerExtensionIpc,
+  type ExtensionWindow
+} from './extensions'
 import { captureVisible, saveLastCapture } from './screenshot'
 import { togglePictureInPicture } from './pip'
 import { controlMedia, readMedia } from './media'
@@ -616,6 +623,30 @@ function openInBrowser(url: string): void {
   target.window.focus()
 }
 
+/** Browser windows and installed apps, as Chrome extensions are told about them. */
+function extensionWindows(): ExtensionWindow[] {
+  const list: ExtensionWindow[] = []
+  for (const shell of shells.values()) {
+    if (shell.window.isDestroyed()) continue
+    // Amnesia tabs have no extensions, and extensions are not told about them.
+    const tabs = shell.tabs.extensionTabs().filter((tab) => !tab.amnesia)
+    list.push({ id: shell.window.id, window: shell.window, type: 'normal', tabs })
+  }
+  for (const app of appShells.values()) {
+    const contents = app.page.webContents
+    if (app.window.isDestroyed() || contents.isDestroyed()) continue
+    list.push({
+      id: app.window.id,
+      window: app.window,
+      type: 'app',
+      tabs: [
+        { contents, index: 0, active: true, pinned: false, url: contents.getURL(), title: contents.getTitle(), favicon: null }
+      ]
+    })
+  }
+  return list
+}
+
 function registerAppBarIpc(): void {
   const appFor = (event: Electron.IpcMainInvokeEvent): AppShell | undefined => appShellForBar(event.sender.id)
 
@@ -843,6 +874,8 @@ function toggleSidebar(shell: Shell, open = !shell.sidebar): void {
 function pushState(shell: Shell): void {
   if (shell.chrome.webContents.isDestroyed()) return
   shell.chrome.webContents.send('browser:state', withAdblock(shell, shell.tabs.state()))
+  // Extensions hear which tab came to the front, and badges follow it.
+  noticeTabs()
 }
 
 /**
@@ -1341,6 +1374,61 @@ function registerIpc(): void {
       shellOwningTab(tab.id)?.chrome.webContents ?? appShellForPage(tab.id)?.bar.webContents ?? null
   })
   registerAppBarIpc()
+  registerExtensionIpc({
+    promptInstall: (contents, request) => {
+      const shell = shellOwningTab(contents.id)
+      if (!shell || shell.chrome.webContents.isDestroyed()) return false
+      shell.chrome.webContents.send('ext:install-prompt', request)
+      return true
+    },
+    cancelInstallPrompt: (contents, requestId) => {
+      const shell = shellOwningTab(contents.id)
+      if (shell && !shell.chrome.webContents.isDestroyed()) {
+        shell.chrome.webContents.send('ext:install-done', requestId)
+      }
+    },
+    windows: extensionWindows,
+    openTab: (url, options) => {
+      const shell =
+        [...shells.values()].find((each) => each.window.id === options.windowId) ?? focusedShell()
+      if (!shell) return null
+      const id = shell.tabs.createTab(url, { activate: options.active, index: options.index })
+      if (options.pinned) shell.tabs.setPinned([id], true)
+      if (options.active) shell.window.focus()
+      return shell.tabs.contentsOf(id)
+    },
+    activateTab: (contents) => {
+      const shell = shellOwningTab(contents.id)
+      const id = shell?.tabs.tabIdFor(contents.id)
+      if (shell && id != null) {
+        shell.tabs.activate(id)
+        shell.window.focus()
+      } else appShellForPage(contents.id)?.window.focus()
+    },
+    closeTab: (contents) => {
+      const shell = shellOwningTab(contents.id)
+      const id = shell?.tabs.tabIdFor(contents.id)
+      if (shell && id != null) shell.tabs.closeTab(id)
+      else appShellForPage(contents.id)?.window.close()
+    },
+    pinTab: (contents, pinned) => {
+      const shell = shellOwningTab(contents.id)
+      const id = shell?.tabs.tabIdFor(contents.id)
+      if (shell && id != null) shell.tabs.setPinned([id], pinned)
+    },
+    openWindow: (url) => createWindow(url),
+    windowFor: (toolbar) => {
+      const id = shells.get(toolbar.id)?.window.id ?? appShellForBar(toolbar.id)?.window.id
+      return extensionWindows().find((each) => each.id === id) ?? null
+    },
+    toolbars: () => [
+      ...[...shells.values()].map((shell) => ({
+        toolbar: shell.chrome.webContents,
+        active: shell.tabs.activeWebContents()
+      })),
+      ...[...appShells.values()].map((app) => ({ toolbar: app.bar.webContents, active: app.page.webContents }))
+    ]
+  })
 
   // Every handler below acts on the window that sent the call. Resolving the
   // window per call is what keeps a second window from hijacking the first.
@@ -1705,7 +1793,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // No File / Edit / View menu bar. Clipboard and text-editing shortcuts are
   // handled by Chromium inside web contents, so nothing useful is lost.
   Menu.setApplicationMenu(null)
@@ -1722,6 +1810,13 @@ app.whenReady().then(() => {
 
   registerIpc()
   initDownloads(pushStateEverywhere)
+  initDarkMode(() => {
+    for (const shell of shells.values()) shell.tabs.repaintBackgrounds()
+  })
+
+  // Installed extensions load before the first window, so its tabs get their
+  // content scripts — but a slow disk does not hold the window up for long.
+  await Promise.race([initExtensions(), new Promise((resolve) => setTimeout(resolve, 1500))])
 
   // Installed web app? Open just that window. Everything else is still set up,
   // because this process is now the browser too: opening IE2 while the app is

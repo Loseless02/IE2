@@ -1001,6 +1001,16 @@ const SECTIONS: Section[] = [
           toggle('showFxButton')
         ),
         row(
+          'Show Dark mode button',
+          'Dark websites, with no white flash while they load. Can be switched off per site.',
+          toggle('showDarkButton')
+        ),
+        row(
+          'Show Extensions button',
+          'Your Chrome extensions. Extensions you pin stay beside the address bar either way.',
+          toggle('showExtensionsButton')
+        ),
+        row(
           'Show media button',
           'What the current tab is playing, with play, pause and seek.',
           toggle('showMediaButton')

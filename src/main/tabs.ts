@@ -16,6 +16,7 @@ import { forgetTabBlocked, resetTabBlocked } from './adblock'
 import { capturePageText, shouldIndex } from './capture'
 import { detectInstallable } from './pwa'
 import { attachContextMenu } from './menus'
+import { pageBackground } from './darkmode'
 import { getSettings } from './settings'
 import {
   indexPageText,
@@ -168,7 +169,7 @@ export type Shortcut =
  * browser shortcuts have to be recognised in the main process, before the page
  * sees them. Returns the action to run, or null to let the page have the key.
  */
-function shortcutFor(input: Electron.Input): Shortcut | null {
+export function shortcutFor(input: Electron.Input): Shortcut | null {
   if (input.type !== 'keyDown') return null
 
   const key = input.key.toLowerCase()
@@ -283,6 +284,8 @@ export class TabManager {
         plugins: true
       }
     })
+    // Dark before the page draws, when dark mode is on.
+    view.setBackgroundColor(pageBackground())
 
     const tab: Tab = {
       id: nextTabId++,
@@ -577,6 +580,43 @@ export class TabManager {
     return this.tabs.some((t) => t.view.webContents.id === webContentsId)
   }
 
+  /** The page a tab shows. */
+  contentsOf(id: number): Electron.WebContents | null {
+    return this.tabs.find((t) => t.id === id)?.view.webContents ?? null
+  }
+
+  /** The tab showing this webContents, for callers that only know the page. */
+  tabIdFor(webContentsId: number): number | null {
+    return this.tabs.find((t) => t.view.webContents.id === webContentsId)?.id ?? null
+  }
+
+  /**
+   * Every tab as extensions see it, in strip order. Extensions name a tab by
+   * its webContents id — that is what Chromium hands them as `sender.tab.id` —
+   * so the page is passed along rather than our own tab number.
+   */
+  extensionTabs(): {
+    contents: Electron.WebContents
+    index: number
+    active: boolean
+    pinned: boolean
+    amnesia: boolean
+    url: string
+    title: string
+    favicon: string | null
+  }[] {
+    return this.tabs.map((tab, index) => ({
+      contents: tab.view.webContents,
+      index,
+      active: tab.id === this.activeId,
+      pinned: tab.pinned,
+      amnesia: tab.amnesia,
+      url: tab.asleep ? tab.sleepingUrl : tab.view.webContents.getURL() || tab.startUrl,
+      title: tab.asleep ? tab.sleepingTitle : tab.view.webContents.getTitle(),
+      favicon: tab.favicon
+    }))
+  }
+
   closedTabs(): ClosedTab[] {
     return this.closed
   }
@@ -713,6 +753,11 @@ export class TabManager {
     this.insetTop = top
     this.insetRight = right
     this.layout()
+  }
+
+  /** Dark mode went on or off: what shows before each page draws follows it. */
+  repaintBackgrounds(): void {
+    for (const tab of this.tabs) tab.view.setBackgroundColor(pageBackground())
   }
 
   /**
@@ -947,6 +992,7 @@ export class TabManager {
         plugins: true
       }
     })
+    tab.view.setBackgroundColor(pageBackground())
 
     this.wire(tab)
     attachContextMenu(tab.view.webContents, () => tab.owner, tab.amnesia)

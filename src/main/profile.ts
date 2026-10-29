@@ -18,9 +18,11 @@ import { join } from 'node:path'
 export const IS_DEV_COPY =
   !app.isPackaged || /[\\/]dist[\\/]win-unpacked[\\/]/i.test(process.execPath)
 
-if (IS_DEV_COPY) {
-  app.setPath('userData', join(app.getPath('appData'), 'internet-explorer-2-dev'))
-}
+app.setPath('userData', join(app.getPath('appData'), IS_DEV_COPY ? 'internet-explorer-2-dev' : 'internet-explorer-2'))
+
+// The name sites see — the Chrome Web Store's button reads "Add to IE2". Set
+// only after the profile folder is pinned above, which used to follow it.
+app.setName('IE2')
 
 /**
  * Windows groups taskbar buttons by this id, so the test copy needs its own or

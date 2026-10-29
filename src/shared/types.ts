@@ -365,3 +365,40 @@ export const SIDEBAR_WIDTH = 320
 
 /** Largest the omnibox dropdown may grow before it scrolls internally. */
 export const DROPDOWN_MAX_HEIGHT = 420
+
+/** A Chrome extension as the toolbar shows it, for the tab in front. */
+export interface ExtensionInfo {
+  id: string
+  name: string
+  version: string
+  description: string
+  /** Its toolbar icon as a data URL — what it set for this tab, or its own. */
+  icon: string | null
+  /** Turned off extensions stay listed so they can be turned back on. */
+  enabled: boolean
+  /** Shown on the toolbar itself, not only in the extensions panel. */
+  pinned: boolean
+  badgeText: string
+  badgeColor: string
+  badgeTextColor: string
+  /** Its hover text, or its name. */
+  title: string
+  /** Clicking it opens a popup, rather than telling the extension it was clicked. */
+  hasPopup: boolean
+  /** It has switched its button off for this page. */
+  actionDisabled: boolean
+  hasOptions: boolean
+}
+
+/** The Chrome Web Store asking to add an extension: shown as a card under the toolbar. */
+export interface ExtensionInstallRequest {
+  requestId: number
+  name: string
+  icon: string | null
+  /** What it will be able to do, in Chrome's words. */
+  warnings: string[]
+  /** Parts of it IE2 cannot run. */
+  missing: string[]
+}
+
+export const CHROME_WEB_STORE_URL = 'https://chromewebstore.google.com/'

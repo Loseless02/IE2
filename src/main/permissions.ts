@@ -3,6 +3,7 @@ import type { PermissionKind, PermissionRequest } from '../shared/types'
 import { AMNESIA_PARTITION, PARTITION } from './partitions'
 import { setSitePermission, sitePermission } from './db'
 import { getSettings } from './settings'
+import { extensionAllows } from './extensions'
 
 /**
  * Site permissions: a site asks once, the user answers, and the answer is kept
@@ -102,6 +103,9 @@ export function initPermissions(prompt: typeof showPrompt): void {
 
     ses.setPermissionRequestHandler((contents, permission, callback, details) => {
       if (ALWAYS_ALLOWED.has(permission)) return callback(true)
+      // An extension's own pages get what its manifest declared, without asking.
+      const forExtension = extensionAllows(details.requestingUrl ?? contents.getURL(), permission)
+      if (forExtension !== null) return callback(forExtension)
 
       const origin = originOf(details.requestingUrl ?? contents.getURL())
       const kinds = kindsFor(permission, details as { mediaTypes?: string[] })
@@ -141,6 +145,8 @@ export function initPermissions(prompt: typeof showPrompt): void {
 
     ses.setPermissionCheckHandler((_contents, permission, requestingOrigin, details) => {
       if (ALWAYS_ALLOWED.has(permission)) return true
+      const forExtension = extensionAllows(requestingOrigin, permission)
+      if (forExtension !== null) return forExtension
       const origin = originOf(requestingOrigin)
       const kinds = kindsFor(permission, {
         mediaTypes: (details as { mediaType?: string }).mediaType

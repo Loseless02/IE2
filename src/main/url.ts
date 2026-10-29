@@ -6,7 +6,9 @@ import { getSettings } from './settings'
 // `file:` is here so the browser can open a local page or PDF when Windows
 // hands it one. Pages still cannot navigate themselves to file: — this list
 // governs what the browser itself will load.
-const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'about:', 'ie2:', 'file:'])
+// `chrome-extension:` is for extensions' own pages — options, and what they
+// open in a tab.
+const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'about:', 'ie2:', 'file:', 'chrome-extension:'])
 
 /**
  * Turn whatever the user typed into the omnibox into a URL to navigate to.

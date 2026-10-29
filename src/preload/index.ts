@@ -12,7 +12,9 @@ import type {
   PublicIp,
   SitePermission,
   ScreenshotResult,
-  Suggestion
+  Suggestion,
+  ExtensionInfo,
+  ExtensionInstallRequest
 } from '../shared/types'
 import type { AudioFx, AudioFxPreset, AudioFxState } from '../shared/audiofx'
 
@@ -161,6 +163,27 @@ const api = {
   /** Asks an IP-check service; only called when the Public IP panel opens. */
   publicIp: (): Promise<PublicIp> => ipcRenderer.invoke('net:public-ip'),
 
+  /** Chrome extensions, as the toolbar in front shows them. */
+  extensions: (): Promise<ExtensionInfo[]> => ipcRenderer.invoke('ext:list'),
+  onExtensionsChanged: (callback: (list: ExtensionInfo[]) => void): void => {
+    ipcRenderer.on('ext:changed', (_event, list: ExtensionInfo[]) => callback(list))
+  },
+  /** Its button was clicked; the popup hangs from `anchor`, in window coordinates. */
+  clickExtension: (id: string, anchor: { x: number; y: number; width: number; height: number }): Promise<void> =>
+    ipcRenderer.invoke('ext:click', id, anchor),
+  extensionMenu: (id: string): Promise<void> => ipcRenderer.invoke('ext:menu', id),
+  pinExtension: (id: string, pinned: boolean): Promise<void> => ipcRenderer.invoke('ext:pin', id, pinned),
+  openExtensionStore: (): Promise<void> => ipcRenderer.invoke('ext:store'),
+  /** The store asking to add an extension, and the question going away. */
+  onExtensionInstallPrompt: (callback: (request: ExtensionInstallRequest) => void): void => {
+    ipcRenderer.on('ext:install-prompt', (_event, request: ExtensionInstallRequest) => callback(request))
+  },
+  onExtensionInstallDone: (callback: (requestId: number) => void): void => {
+    ipcRenderer.on('ext:install-done', (_event, requestId: number) => callback(requestId))
+  },
+  answerExtensionInstall: (requestId: number, allow: boolean): Promise<void> =>
+    ipcRenderer.invoke('ext:install-answer', requestId, allow),
+
   /** Audio effects for whatever the tab in front is playing. */
   audioFx: (): Promise<AudioFxState | null> => ipcRenderer.invoke('fx:get'),
   setAudioFx: (fx: AudioFx, remember: boolean): Promise<AudioFxState | null> =>
@@ -199,6 +222,9 @@ const api = {
   setSitePermission: (origin: string, permission: string, allow: boolean | null): Promise<void> =>
     ipcRenderer.invoke('permission:set', origin, permission, allow),
   /** The toolbar tools in the order they were dragged into. */
+  setDarkMode: (on: boolean): Promise<void> => ipcRenderer.invoke('settings:set', 'darkMode', on),
+  /** The sites dark mode is switched off for. */
+  setDarkModeOff: (sites: string[]): Promise<void> => ipcRenderer.invoke('settings:set', 'darkModeOff', sites),
   setToolbarOrder: (order: string[]): Promise<void> =>
     ipcRenderer.invoke('settings:set', 'toolbarOrder', order),
   /** Ctrl+D, caught wherever the focus was. */

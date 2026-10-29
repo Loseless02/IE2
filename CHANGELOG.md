@@ -4,6 +4,22 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.9.0
+
+- Chrome extensions. Open one in the Chrome Web Store and press Add to IE2;
+  a card under the toolbar says what it will be able to do, and anything it
+  needs that IE2 does not have, before it is added. Extensions update
+  themselves
+- The jigsaw button lists them: click one to open it, pin it beside the
+  address bar, or turn it off, change its options and remove it. Badges,
+  popups, right-click items and extension keyboard shortcuts all work.
+  Installed apps have the button too
+- Dark mode, the moon button: websites turn dark as they are drawn, so a white
+  page never flashes up first. Sites with their own dark theme show it; the
+  rest are darkened without restyling them, leaving photos and video alone.
+  Switch it off for any site that looks wrong, without reloading
+- The Chrome Web Store no longer nags about switching to Chrome
+
 ## 0.8.2
 
 - A short opening animation each time IE2 starts

@@ -5,6 +5,7 @@ import { togglePictureInPicture } from './pip'
 import { groupColour } from '../shared/groups'
 import { searchUrlFor } from '../shared/settings'
 import { getSettings } from './settings'
+import { extensionMenuItems } from './extensions'
 
 /** Query parameters that only exist to track who clicked what. */
 const TRACKING = /^(utm_\w+|fbclid|gclid|dclid|gbraid|wbraid|yclid|msclkid|mc_cid|mc_eid|igshid|si|ref_src|ref_url|_hsenc|_hsmi|mkt_tok|vero_id|oly_\w+|spm|scm)$/i
@@ -156,6 +157,9 @@ export function attachContextMenu(wc: WebContents, tabs: () => TabManager | null
         section({ label: 'View page source', click: () => manager.createTab(`view-source:${wc.getURL()}`, { amnesia }) })
       }
     }
+
+    // Items extensions added, as in Chrome: above Inspect.
+    if (!amnesia) section(...extensionMenuItems(wc, params))
 
     section({
       label: 'Inspect',

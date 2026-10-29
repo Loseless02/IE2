@@ -21,4 +21,5 @@ wallpapercave.com and no ownership is claimed over them. See the README beside
 them for details.
 
 This product bundles third-party software with its own licence terms, including
-Chromium, Electron, SQLite and the Ghostery adblocker and its filter lists.
+Chromium, Electron, SQLite, the Ghostery adblocker and its filter lists, and
+electron-chrome-web-store (MIT, Samuel Maddock) for installing Chrome extensions.

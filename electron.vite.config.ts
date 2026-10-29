@@ -45,7 +45,9 @@ export default defineConfig({
           // The title bar of an installed web app.
           appbar: resolve(__dirname, 'src/preload/appbar.ts'),
           // Runs in every page, before the page's own scripts.
-          adblock: resolve(__dirname, 'src/preload/adblock.ts')
+          adblock: resolve(__dirname, 'src/preload/adblock.ts'),
+          // Chrome extensions' own pages and workers: the API Electron leaves out.
+          extension: resolve(__dirname, 'src/preload/extension.ts')
         },
         output: { format: 'cjs', entryFileNames: '[name].js' }
       }
