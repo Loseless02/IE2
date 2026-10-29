@@ -6,8 +6,8 @@ file to show "what's new" once after an update, so keep the heading format —
 
 ## 0.9.0
 
-- Chrome extensions. Open one in the Chrome Web Store and press Add to IE2;
-  a card under the toolbar says what it will be able to do, and anything it
+- Chrome extensions. Open one in the Chrome Web Store and press its Add
+  button; a card under the toolbar says what it will be able to do, and anything it
   needs that IE2 does not have, before it is added. Extensions update
   themselves
 - The jigsaw button lists them: click one to open it, pin it beside the

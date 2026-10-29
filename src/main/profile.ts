@@ -20,7 +20,7 @@ export const IS_DEV_COPY =
 
 app.setPath('userData', join(app.getPath('appData'), IS_DEV_COPY ? 'internet-explorer-2-dev' : 'internet-explorer-2'))
 
-// The name sites see — the Chrome Web Store's button reads "Add to IE2". Set
+// The name sites see — the Chrome Web Store can label its button with it. Set
 // only after the profile folder is pinned above, which used to follow it.
 app.setName('IE2')
 
