@@ -33,6 +33,12 @@ export function loadSettings(): void {
   }
   if (!['always', 'newtab', 'never'].includes(next.bookmarksBar)) next.bookmarksBar = 'always'
 
+  // 0.8.1 kept the custom theme as an entry in the list; it is a switch now.
+  if (next.theme === 'custom') {
+    next.useCustomTheme = true
+    next.theme = next.customTheme?.base || DEFAULT_SETTINGS.theme
+  }
+
   cache = next
 }
 

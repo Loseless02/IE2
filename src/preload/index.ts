@@ -155,6 +155,9 @@ const api = {
   removeBookmark: (url: string): Promise<void> => ipcRenderer.invoke('bookmark:remove', url),
   bookmarkFolders: (): Promise<string[]> => ipcRenderer.invoke('bookmark:folders'),
   toggleSidebar: (): Promise<void> => ipcRenderer.invoke('sidebar:toggle'),
+  /** The opening animation: whether to play it, and that it has finished. */
+  booting: (): Promise<boolean> => ipcRenderer.invoke('view:booting'),
+  booted: (): Promise<void> => ipcRenderer.invoke('view:booted'),
   /** Asks an IP-check service; only called when the Public IP panel opens. */
   publicIp: (): Promise<PublicIp> => ipcRenderer.invoke('net:public-ip'),
 

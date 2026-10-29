@@ -3,6 +3,34 @@ import type { TabManager } from './tabs'
 import { isAllowedUrl } from './url'
 import { togglePictureInPicture } from './pip'
 import { groupColour } from '../shared/groups'
+import { searchUrlFor } from '../shared/settings'
+import { getSettings } from './settings'
+
+/** Query parameters that only exist to track who clicked what. */
+const TRACKING = /^(utm_\w+|fbclid|gclid|dclid|gbraid|wbraid|yclid|msclkid|mc_cid|mc_eid|igshid|si|ref_src|ref_url|_hsenc|_hsmi|mkt_tok|vero_id|oly_\w+|spm|scm)$/i
+
+/** The same address without its tracking parameters. */
+function cleanLink(url: string): string {
+  try {
+    const parsed = new URL(url)
+    for (const key of [...parsed.searchParams.keys()]) if (TRACKING.test(key)) parsed.searchParams.delete(key)
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
+/** A link that opens the page scrolled to, and highlighting, the selected text. */
+function highlightLink(page: string, text: string): string {
+  const base = page.split('#')[0]
+  const words = text.replace(/\s+/g, ' ').trim()
+  // Long selections are linked by their first and last few words.
+  const fragment =
+    words.length > 80
+      ? `${encodeURIComponent(words.split(' ').slice(0, 4).join(' '))},${encodeURIComponent(words.split(' ').slice(-4).join(' '))}`
+      : encodeURIComponent(words)
+  return `${base}#:~:text=${fragment}`
+}
 
 /**
  * Right-click menus for page content. Built per click from what was actually
@@ -14,70 +42,125 @@ export function attachContextMenu(wc: WebContents, tabs: () => TabManager | null
     if (!manager) return
 
     const items: MenuItemConstructorOptions[] = []
+    const section = (...entries: MenuItemConstructorOptions[]): void => {
+      if (items.length > 0 && entries.length > 0) items.push({ type: 'separator' })
+      items.push(...entries)
+    }
+    const search = (query: string): string => searchUrlFor(getSettings().searchEngine, query)
     const link = params.linkURL
 
     if (link && isAllowedUrl(link)) {
-      items.push(
+      section(
         { label: 'Open link in new tab', click: () => manager.createTab(link, { activate: false, amnesia }) },
-        { label: 'Open link in amnesia tab', click: () => manager.createTab(link, { amnesia: true }) },
         { label: 'Open link in new window', click: () => manager.openWindow(link) },
-        { type: 'separator' },
-        { label: 'Copy link address', click: () => clipboard.writeText(link) },
-        { type: 'separator' }
+        { label: 'Open link in amnesia tab', click: () => manager.createTab(link, { amnesia: true }) },
+        {
+          label: 'Open link in split view',
+          click: () => manager.toggleSplitWith(manager.createTab(link, { activate: false, amnesia }))
+        }
       )
-    }
-
-    // Right-clicking the video itself is the most natural way to float it.
-    if (params.mediaType === 'video') {
-      items.push(
-        { label: 'Picture in picture', click: () => void togglePictureInPicture(wc) },
-        { type: 'separator' }
+      section(
+        { label: 'Save link as…', click: () => wc.downloadURL(link) },
+        { label: 'Copy link address', click: () => clipboard.writeText(link) },
+        { label: 'Copy clean link', click: () => clipboard.writeText(cleanLink(link)) },
+        ...(params.linkText.trim()
+          ? [{ label: 'Copy link text', click: () => clipboard.writeText(params.linkText.trim()) }]
+          : [])
       )
     }
 
     if (params.mediaType === 'image' && params.srcURL) {
-      items.push(
-        { label: 'Open image in new tab', click: () => manager.createTab(params.srcURL, { amnesia }) },
-        { label: 'Copy image address', click: () => clipboard.writeText(params.srcURL) },
-        { label: 'Save image as…', click: () => wc.downloadURL(params.srcURL) },
-        { type: 'separator' }
+      const src = params.srcURL
+      const web = /^https?:/i.test(src)
+      section(
+        ...(web ? [{ label: 'Open image in new tab', click: () => manager.createTab(src, { activate: false, amnesia }) }] : []),
+        { label: 'Save image as…', click: () => wc.downloadURL(src) },
+        { label: 'Copy image', click: () => wc.copyImageAt(params.x, params.y) },
+        ...(web ? [{ label: 'Copy image address', click: () => clipboard.writeText(src) }] : [])
+      )
+    }
+
+    // Right-clicking the video itself is the most natural way to float it.
+    if (params.mediaType === 'video' || params.mediaType === 'audio') {
+      const src = params.srcURL
+      const web = /^https?:/i.test(src)
+      section(
+        ...(params.mediaType === 'video'
+          ? [{ label: 'Picture in picture', click: () => void togglePictureInPicture(wc) }]
+          : []),
+        ...(web
+          ? [
+              { label: `Open ${params.mediaType} in new tab`, click: () => manager.createTab(src, { activate: false, amnesia }) },
+              { label: `Save ${params.mediaType} as…`, click: () => wc.downloadURL(src) },
+              { label: `Copy ${params.mediaType} address`, click: () => clipboard.writeText(src) }
+            ]
+          : [])
       )
     }
 
     if (params.isEditable) {
-      items.push(
+      // Spelling first, where the eye already is.
+      if (params.misspelledWord) {
+        section(
+          ...params.dictionarySuggestions.slice(0, 5).map((word) => ({
+            label: word,
+            click: () => wc.replaceMisspelling(word)
+          })),
+          {
+            label: 'Add to dictionary',
+            click: () => wc.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+          }
+        )
+      }
+      section(
         { role: 'undo' },
         { role: 'redo' },
         { type: 'separator' },
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'selectAll' },
-        { type: 'separator' }
+        { label: 'Paste as plain text', role: 'pasteAndMatchStyle' },
+        { role: 'selectAll' }
       )
-    } else if (params.selectionText) {
-      const text = params.selectionText.trim().slice(0, 40)
-      items.push(
+    } else if (params.selectionText.trim()) {
+      const selection = params.selectionText.trim()
+      const short = selection.length > 32 ? `${selection.slice(0, 32)}…` : selection
+      section(
         { role: 'copy' },
-        { label: `Search for “${text}”`, click: () => manager.createTab(params.selectionText, { amnesia }) },
-        { type: 'separator' }
+        { label: `Search for “${short}”`, click: () => manager.createTab(search(selection), { amnesia }) },
+        ...(isAllowedUrl(params.pageURL)
+          ? [
+              {
+                label: 'Copy link to highlight',
+                click: () => clipboard.writeText(highlightLink(params.pageURL, selection))
+              }
+            ]
+          : [])
       )
     }
 
+    // Bare page: the page's own commands.
     if (items.length === 0) {
-      items.push(
+      section(
         { label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() },
         { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
-        { label: 'Reload', click: () => wc.reload() },
-        { type: 'separator' }
+        { label: 'Reload', click: () => wc.reload() }
       )
+      section(
+        { label: 'Save page as…', click: () => wc.downloadURL(wc.getURL()) },
+        { label: 'Print…', click: () => wc.print() },
+        { label: 'Copy page address', click: () => clipboard.writeText(wc.getURL()) },
+        { label: 'Select all', role: 'selectAll' }
+      )
+      if (isAllowedUrl(wc.getURL())) {
+        section({ label: 'View page source', click: () => manager.createTab(`view-source:${wc.getURL()}`, { amnesia }) })
+      }
     }
 
-    items.push({
-      label: 'Inspect element',
+    section({
+      label: 'Inspect',
       click: () => wc.inspectElement(params.x, params.y)
     })
-
     Menu.buildFromTemplate(items).popup()
   })
 

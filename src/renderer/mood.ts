@@ -288,27 +288,31 @@ function strike(dest: AudioNode, verb: AudioNode, dist: number): void {
   pan.connect(verb)
 
   if (dist < 0.45) {
-    // Close: a low tearing crackle of many tiny bursts. One clean high hiss
-    // here reads as a hi-hat, not as lightning.
-    const filter = ac.createBiquadFilter()
-    const gain = ac.createGain()
-    const span = rand(0.35, 0.8)
-    filter.type = 'lowpass'
-    filter.frequency.value = 1800
-    gain.gain.value = 1.2 * (1 - dist)
-    filter.connect(gain).connect(pan)
+    // Close: the boom of the strike itself — a low thud of filtered noise and a
+    // falling sub tone, no high end at all. Anything bright here, however
+    // short, is heard as a cymbal rather than as weather.
+    const thud = ac.createBufferSource()
+    const thudFilter = ac.createBiquadFilter()
+    const thudGain = ac.createGain()
+    thud.buffer = brown
+    thudFilter.type = 'lowpass'
+    thudFilter.frequency.value = 260
+    thudGain.gain.setValueAtTime(0.0001, t)
+    thudGain.gain.exponentialRampToValueAtTime(1.8 * (1 - dist), t + 0.03)
+    thudGain.gain.exponentialRampToValueAtTime(0.0001, t + rand(0.7, 1.2))
+    thud.connect(thudFilter).connect(thudGain).connect(pan)
+    thud.start(t, rand(0, 5), 1.4)
 
-    for (let k = 0; k < 30; k++) {
-      const source = ac.createBufferSource()
-      const env = ac.createGain()
-      const at = t + Math.pow(Math.random(), 1.5) * span
-      source.buffer = white
-      env.gain.setValueAtTime(0, at)
-      env.gain.linearRampToValueAtTime(rand(0.2, 0.8) * (1 - (0.6 * (at - t)) / span), at + 0.004)
-      env.gain.exponentialRampToValueAtTime(0.001, at + rand(0.02, 0.08))
-      source.connect(env).connect(filter)
-      source.start(at, rand(0, 5), 0.1)
-    }
+    const sub = ac.createOscillator()
+    const subGain = ac.createGain()
+    sub.frequency.setValueAtTime(rand(55, 70), t)
+    sub.frequency.exponentialRampToValueAtTime(32, t + 0.9)
+    subGain.gain.setValueAtTime(0.0001, t)
+    subGain.gain.exponentialRampToValueAtTime(0.9 * (1 - dist), t + 0.02)
+    subGain.gain.exponentialRampToValueAtTime(0.0001, t + 1)
+    sub.connect(subGain).connect(pan)
+    sub.start(t)
+    sub.stop(t + 1.1)
   }
 
   const roll = ac.createBufferSource()
@@ -317,7 +321,7 @@ function strike(dest: AudioNode, verb: AudioNode, dist: number): void {
   roll.buffer = brown
   roll.loop = true
   low.type = 'lowpass'
-  low.frequency.setValueAtTime(900 - dist * 600, t)
+  low.frequency.setValueAtTime(520 - dist * 300, t)
   low.frequency.exponentialRampToValueAtTime(90, t + length)
 
   const peak = 1.6 - dist * 0.9
@@ -343,7 +347,12 @@ function thunder(near: boolean): (dest: GainNode) => Running {
     const wet = ac.createGain()
     verb.buffer = verbBuffer
     wet.gain.value = near ? 0.35 : 0.6
-    verb.connect(wet).connect(dest)
+    // The room is made of white noise; unfiltered it put a hiss on the front
+    // of every strike. Thunder's echo is all low end.
+    const dark = ac.createBiquadFilter()
+    dark.type = 'lowpass'
+    dark.frequency.value = 700
+    verb.connect(dark).connect(wet).connect(dest)
 
     const hit = (): void => strike(dest, verb, near ? rand(0, 0.4) : rand(0.5, 1))
     let first = true

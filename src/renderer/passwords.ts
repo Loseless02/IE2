@@ -1,4 +1,5 @@
 import { applyTheme } from './theme'
+import './switch.css'
 import { icon } from './icons'
 import { confirmDialog } from './dialog'
 import type { CredentialSummary, VaultStatus } from '../shared/types'

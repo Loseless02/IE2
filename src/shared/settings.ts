@@ -97,8 +97,13 @@ export interface Settings {
   language: string
 
   // Appearance
-  /** Interface theme id; see shared/themes.ts. 'custom' uses customTheme. */
+  /** The theme picked from the list; see shared/themes.ts. */
   theme: string
+  /**
+   * Paint with the custom theme instead. Switching it off goes back to the
+   * picked theme, and the custom colours are kept for next time.
+   */
+  useCustomTheme: boolean
   /** The colours of the custom theme, over its base theme. */
   customTheme: CustomTheme
   /** Accent override. Empty means "whatever the theme prefers". */
@@ -128,6 +133,8 @@ export interface Settings {
    * page (the way Chrome does it by default), or never.
    */
   bookmarksBar: 'always' | 'newtab' | 'never'
+  /** A margin and rounded corners round the page, so it sits in the browser like a card. */
+  pageFrame: boolean
   /**
    * The order the user dragged the toolbar tools into, as button ids. Empty
    * means the built-in order; ids missing from it keep their built-in place.
@@ -189,6 +196,11 @@ export interface Settings {
    * appears exactly once after an update rather than on every launch.
    */
   lastSeenVersion: string
+  /**
+   * When the startup check finds a newer version, download it and restart into
+   * it straight away instead of only saying it exists.
+   */
+  autoInstallUpdates: boolean
 
   // Shields
   blockAds: boolean
@@ -216,6 +228,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
   language: 'en',
   theme: 'ie2-dark',
+  useCustomTheme: false,
   customTheme: {
     base: 'ie2-dark',
     bg: '',
@@ -248,6 +261,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showAmnesiaButton: true,
   bookmarksBar: 'always',
   toolbarOrder: [],
+  pageFrame: true,
   animations: true,
   stylePageScrollbars: true,
 
@@ -280,6 +294,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
   autoUpdate: true,
   lastSeenVersion: '',
+  autoInstallUpdates: false,
 
   blockAds: true,
 

@@ -64,7 +64,7 @@
         <span id="perm-text"></span>
       </div>
       <label class="perm-remember" id="perm-remember-row">
-        <input type="checkbox" id="perm-remember" checked />
+        <input type="checkbox" id="perm-remember" class="x-switch small" checked />
         <span>Remember for this site</span>
       </label>
       <div id="perm-amnesia" hidden>Amnesia tab: the answer is forgotten when IE2 closes.</div>
@@ -118,6 +118,7 @@
       <button id="ip-reveal" class="masked">
         <span class="ip-row"><span class="fam">IPv4</span><span id="ip-v4" class="addr"></span></span>
         <span class="ip-row"><span class="fam">IPv6</span><span id="ip-v6" class="addr"></span></span>
+        <span class="ip-row"><span class="fam">Country</span><span id="ip-country" class="addr"></span></span>
         <span id="ip-hint">Click to reveal</span>
       </button>
       <div class="ip-foot">
@@ -125,9 +126,9 @@
         <button id="ip-copy">Copy</button>
       </div>
       <div id="ip-note">
-        The address websites see. If it is your VPN's, this browser's traffic goes through it —
-        though an address alone cannot prove nothing else leaks. Asked from api.ipify.org, only
-        when you open this.
+        The address websites see, and the country it belongs to. If it is your VPN's, this
+        browser's traffic goes through it — though an address alone cannot prove nothing else
+        leaks. Asked from api.ipify.org and Cloudflare, only when you open this.
       </div>
     </div>
 
@@ -299,9 +300,10 @@
     <div id="shield-panel" hidden>
       <div class="panel-head">
         <span>Blocking</span>
-        <button id="shield-toggle" class="switch">
-          <span class="dot"></span><span id="shield-toggle-label">On</span>
-        </button>
+        <span class="shield-switch">
+          <span id="shield-toggle-label">On</span>
+          <button id="shield-toggle" class="x-switch small" role="switch" aria-label="Blocking"></button>
+        </span>
       </div>
       <!-- Per-site switch, for the pages a filter list breaks. -->
       <div id="shield-site" hidden>
@@ -311,6 +313,17 @@
       <div id="shield-counts"></div>
       <div id="shield-top"></div>
       <div id="shield-footer"></div>
+    </div>
+
+    <!-- The opening animation, over the whole window, once per launch. -->
+    <div id="boot" hidden>
+      <div class="boot-mark">
+        <svg class="boot-ring" viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="52" />
+        </svg>
+        <div class="boot-word"><span>I</span><span>E</span><span>2</span></div>
+      </div>
+      <div class="boot-line">remembering what you read</div>
     </div>
 
     <script type="module" src="./main.ts"></script>

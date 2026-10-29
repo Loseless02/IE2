@@ -184,6 +184,8 @@ export interface PasswordsForPage {
 export interface PublicIp {
   v4: string | null
   v6: string | null
+  /** Two-letter country code the address is registered to, if known. */
+  country: string | null
   checkedAt: number
   /** Neither address could be fetched — offline, most likely. */
   failed: boolean
@@ -195,6 +197,11 @@ export const BOOKMARKS_BAR = 'Bookmarks bar'
 export interface Suggestion extends HistoryHit {
   kind: 'search' | 'url' | 'history' | 'fulltext' | 'bookmark'
   label: string
+  /**
+   * Set on a first row that finishes what was typed — "youtube.com" for "y" —
+   * so the omnibox can fill in the rest, selected, the way other browsers do.
+   */
+  inline?: string
 }
 
 export interface DownloadState {

@@ -1,4 +1,5 @@
 import './fxpanel.css'
+import './switch.css'
 import { icon } from './icons'
 import {
   BUILT_IN_FX_PRESETS,
@@ -94,7 +95,7 @@ export function createFxPanel(root: HTMLElement, options: FxPanelOptions): FxPan
 
   const check = (label: string): { wrap: HTMLElement; input: HTMLInputElement } => {
     const wrap = make('label', 'fx-check')
-    const input = make('input')
+    const input = make('input', 'x-switch small')
     input.type = 'checkbox'
     wrap.append(input, document.createTextNode(` ${label}`))
     return { wrap, input }

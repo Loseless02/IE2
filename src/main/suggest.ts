@@ -1,5 +1,5 @@
 import type { Suggestion } from '../shared/types'
-import { searchFullText, searchHistory, searchTerms } from './db'
+import { inlineHost, searchFullText, searchHistory, searchTerms } from './db'
 import { normalizeInput } from './url'
 import { SEARCH_ENGINES, searchUrlFor } from '../shared/settings'
 import { getSettings } from './settings'
@@ -38,6 +38,23 @@ export function buildSuggestions(input: string): Suggestion[] {
   ]
 
   const seen = new Set([target])
+
+  // A site visited often enough that typing its first letters means it: it
+  // goes first, and the omnibox finishes the address. Off with suggestions.
+  const site = getSettings().searchSuggestions ? inlineHost(query) : null
+  if (site && !seen.has(site.url)) {
+    seen.add(site.url)
+    out.unshift({
+      kind: 'url',
+      label: 'Go to',
+      url: site.url,
+      title: site.host,
+      favicon: null,
+      lastVisit: 0,
+      snippet: null,
+      inline: site.host
+    })
+  }
 
   // "Suggestions while typing" was previously read by nothing at all: turning
   // it off changed no behaviour. With it off, the dropdown offers only what

@@ -29,6 +29,7 @@ import {
 import { GROUP_COLOUR_IDS, groupColour } from '../shared/groups'
 import { cleanFx, isNeutral, type AudioFxPreset } from '../shared/audiofx'
 import { createFxPanel } from './fxpanel'
+import { setSwitch } from './switch'
 import {
   PRESETS as MOOD_PRESETS,
   getMood,
@@ -130,6 +131,9 @@ let engineExtras: Suggestion[] = []
  * and doing that on every keystroke is what made the list flash.
  */
 let dropdownFloor = 0
+
+/** The last edit added text, rather than deleting it. */
+let lastInsert = false
 
 /** When the omnibox was last typed in, so a focus bounce does not select it. */
 let lastTypedAt = 0
@@ -370,8 +374,10 @@ function buildTabNode(tab: TabState): HTMLElement {
 
   node.append(spinner, favicon, fallback, title, close)
 
-  // Let the entry animation run, then drop the class so it can be reused.
-  requestAnimationFrame(() => node.classList.remove('entering'))
+  // Drop the class two frames on, not one: the first frame's callbacks run
+  // before the browser has ever drawn the tab in its starting state, so
+  // removing it there meant nothing to animate from — and no animation.
+  requestAnimationFrame(() => requestAnimationFrame(() => node.classList.remove('entering')))
 
   return node
 }
@@ -454,13 +460,17 @@ function renderTabs(): void {
     if (openGroupId === id) closeGroupPanel()
   }
 
-  // Tabs that have gone: animate them out, then take them out of the DOM.
+  // Tabs that have gone slide out where they stand while the rest wait; only
+  // then does the gap close. Closing tab 3 used to set every tab moving at
+  // once, because the strip re-shared its width the moment the tab was gone.
   for (const [id, node] of [...tabNodes]) {
     if (wanted.has(id)) continue
     tabNodes.delete(id)
     node.classList.add('leaving')
-    node.addEventListener('transitionend', () => node.remove(), { once: true })
-    // Motion may be switched off, in which case no transition ever fires.
+    window.setTimeout(() => {
+      node.classList.add('gone')
+      layoutTabs()
+    }, 150)
     window.setTimeout(() => node.remove(), 400)
   }
 
@@ -687,9 +697,14 @@ function layoutTabs(): void {
   const pinnedWidth = state.tabs.filter((tab) => tab.pinned).length * (TAB_MIN_WIDTH + 4)
   const chipWidth = [...groupNodes.values()].reduce((total, chip) => total + chip.offsetWidth + 4, 0)
 
+  // A tab still sliding out keeps its share until it has gone, so nothing
+  // around it moves while it leaves.
+  const departing = tabsEl.querySelectorAll('.tab.leaving:not(.gone)').length
+  const sharing = flexible.length + departing
+
   const available = strip.clientWidth - padding - plus - pinnedWidth - chipWidth
-  const gaps = 4 * Math.max(0, flexible.length - 1)
-  const ideal = flexible.length > 0 ? (available - gaps) / flexible.length : TAB_MAX_WIDTH
+  const gaps = 4 * Math.max(0, sharing - 1)
+  const ideal = sharing > 0 ? (available - gaps) / sharing : TAB_MAX_WIDTH
   const width = Math.max(TAB_MIN_WIDTH, Math.min(TAB_MAX_WIDTH, ideal))
 
   tabsEl.style.setProperty('--tab-width', `${Math.floor(width)}px`)
@@ -1354,6 +1369,11 @@ function renderToolbar(): void {
 
   compatBtn.classList.toggle('on', !!tab?.compat)
   el('bookmarks').classList.toggle('on', state.sidebarOpen)
+  // Coming into view: let its items arrive, once.
+  if (barEl.hidden && state.bookmarksBarShown) {
+    barEl.classList.add('arrive')
+    window.setTimeout(() => barEl.classList.remove('arrive'), 500)
+  }
   barEl.hidden = !state.bookmarksBarShown
   amnesiaBtn.classList.toggle('on', !!tab?.amnesia)
 
@@ -1397,7 +1417,12 @@ function applySettings(): void {
   const settings = state.settings ?? DEFAULT_SETTINGS
   const { accent, showDevToolsButton, showCompatButton, showAmnesiaButton, animations } = settings
 
-  applyTheme({ theme: settings.theme, accent, customTheme: settings.customTheme })
+  applyTheme({
+    theme: settings.theme,
+    accent,
+    customTheme: settings.customTheme,
+    useCustomTheme: settings.useCustomTheme
+  })
   document.documentElement.classList.toggle('no-motion', !animations)
 
   el('home').hidden = !settings.showHomeButton
@@ -1502,7 +1527,7 @@ function renderCompletion(target: HTMLElement, text: string, typed: string): voi
 
 function renderSuggestions(): void {
   suggestionsEl.replaceChildren()
-  const typed = omnibox.value
+  const typed = typedText()
 
   suggestions.forEach((item, index) => {
     const node = document.createElement('div')
@@ -1729,7 +1754,7 @@ function countCard(n: number, label: string): HTMLElement {
 function renderShield(): void {
   const { enabled, available, page, session, lifetime, top, site, siteOff } = state.adblock
 
-  shieldToggle.classList.toggle('off', !enabled)
+  setSwitch(shieldToggle, enabled)
   shieldToggleLabel.textContent = enabled ? msg('panel.on') : msg('panel.off')
 
   // Filter lists sometimes break a site outright. Turning the shield off
@@ -1916,22 +1941,60 @@ function showScreenshot(shot: { preview: string; width: number; height: number; 
   syncPanels()
 }
 
+/**
+ * What the user actually typed: the omnibox's text minus an inline completion
+ * still selected at its end.
+ */
+function typedText(): string {
+  const { value, selectionStart, selectionEnd } = omnibox
+  if (selectionStart !== null && selectionEnd === value.length && selectionStart < selectionEnd && inlineShown) {
+    return value.slice(0, selectionStart)
+  }
+  return value
+}
+
+/** An inline completion is on screen, selected after what was typed. */
+let inlineShown = false
+
+/** What the suggestions on screen were worked out for. */
+let suggestionsFor = ''
+
+/**
+ * Finish the address in place: "y" shows as "youtube.com" with "outube.com"
+ * selected, so Enter goes there and the next key simply types over it.
+ */
+function showInline(query: string, completion: string): void {
+  omnibox.value = query + completion.slice(query.length)
+  omnibox.setSelectionRange(query.length, omnibox.value.length, 'backward')
+  inlineShown = true
+}
+
 function requestSuggestions(): void {
   window.clearTimeout(suggestTimer)
-  const query = omnibox.value
+  const query = typedText()
 
   suggestTimer = window.setTimeout(async () => {
     if (document.activeElement !== omnibox) return
-    const results = await window.browser.suggest(query)
+    let results = await window.browser.suggest(query)
     // A newer keystroke may have landed while we were waiting.
-    if (omnibox.value !== query || document.activeElement !== omnibox) return
+    if (typedText() !== query || document.activeElement !== omnibox) return
 
     // Engine phrases from the previous keystroke that still extend what is
     // typed stay put until the engine answers for this one.
     const typed = query.trim().toLowerCase()
     engineExtras = engineExtras.filter((item) => item.title.toLowerCase().startsWith(typed))
 
+    // Inline completion only follows typing forward: after Backspace the user
+    // is removing it, so it is offered as the second row instead of filled in.
+    const first = results[0]
+    if (first?.inline) {
+      const fits = query === query.trimStart() && first.inline.toLowerCase().startsWith(query.toLowerCase())
+      if (fits && lastInsert) showInline(query, first.inline)
+      else results = [...results.slice(1, 2), first, ...results.slice(2)]
+    }
+
     suggestions = withExtras(results, engineExtras)
+    suggestionsFor = query
     selected = suggestions.length > 0 ? 0 : -1
     if (suggestions.length === 0) dropdownFloor = 0
     renderSuggestions()
@@ -1958,7 +2021,7 @@ function withExtras(list: Suggestion[], extras: Suggestion[]): Suggestion[] {
  * keystroke and never disturbs a selection the user has moved.
  */
 window.browser.onExtraSuggestions(({ query, items }) => {
-  if (omnibox.value !== query || document.activeElement !== omnibox) return
+  if (typedText() !== query || document.activeElement !== omnibox) return
   if (suggestions.length === 0) return
 
   const chosen = selected >= 0 ? suggestions[selected]?.url : undefined
@@ -2607,9 +2670,11 @@ el('pip').addEventListener('click', async () => {
 window.browser.onPip(reportPip)
 el('settings').addEventListener('click', () => window.browser.createTab(SETTINGS_URL))
 
-omnibox.addEventListener('input', () => {
+omnibox.addEventListener('input', (event) => {
   lastTypedAt = Date.now()
   omniboxDirty = true
+  inlineShown = false
+  lastInsert = (event as InputEvent).inputType?.startsWith('insert') ?? true
   requestSuggestions()
 })
 omnibox.addEventListener('focus', () => {
@@ -2620,9 +2685,14 @@ omnibox.addEventListener('blur', closeDropdown)
 
 omnibox.addEventListener('keydown', (event) => {
   switch (event.key) {
-    case 'Enter':
-      go(selected >= 0 ? suggestions[selected].url : omnibox.value)
+    case 'Enter': {
+      // The list may still be for an earlier keystroke — typing fast and
+      // pressing Enter used to open whatever was first for a word since
+      // replaced. Then what was typed is what counts.
+      const current = suggestionsFor === typedText()
+      go(current && selected >= 0 && suggestions[selected] ? suggestions[selected].url : typedText())
       break
+    }
     case 'ArrowDown':
       event.preventDefault()
       moveSelection(1)
@@ -3288,14 +3358,26 @@ function renderIp(): void {
   if (!ipFound) {
     v4.textContent = 'Checking…'
     v6.textContent = ''
+    el('ip-country').textContent = ''
     el('ip-when').textContent = ''
     return
   }
   v4.textContent = ipFound.v4 ?? (ipFound.failed ? 'Could not check — offline?' : 'None')
   v6.textContent = ipFound.v6 ?? 'None'
+  el('ip-country').textContent = ipFound.country ? countryName(ipFound.country) : 'Unknown'
   el('ip-when').textContent = ipFound.failed
     ? ''
     : `Checked ${new Date(ipFound.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+}
+
+/** "TR" reads as "Türkiye (TR)", in the browser's own language list. */
+function countryName(code: string): string {
+  try {
+    const name = new Intl.DisplayNames([navigator.language, 'en'], { type: 'region' }).of(code)
+    return name && name !== code ? `${name} (${code})` : code
+  } catch {
+    return code
+  }
 }
 
 async function checkIp(): Promise<void> {
@@ -3721,6 +3803,19 @@ el('toolbar').addEventListener('keydown', (event) => {
 drawIcons()
 applyStaticText()
 setupTabDrop()
+
+// The opening animation: the main process has already made this view cover
+// the window. Play, fade, and hand the window back.
+void window.browser.booting().then((booting) => {
+  if (!booting) return
+  const boot = el('boot')
+  boot.hidden = false
+  window.setTimeout(() => boot.classList.add('leaving'), 1050)
+  window.setTimeout(() => {
+    boot.hidden = true
+    void window.browser.booted()
+  }, 1400)
+})
 
 window.browser.onState(render)
 window.browser.getState().then(render)

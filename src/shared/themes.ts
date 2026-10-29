@@ -349,6 +349,15 @@ export interface CustomTheme {
 
 export const CUSTOM_THEME_ID = 'custom'
 
+/** The theme on screen: the custom one while its switch is on, the picked one otherwise. */
+export function activeTheme(settings: {
+  theme: string
+  useCustomTheme?: boolean
+  customTheme?: Partial<CustomTheme> | null
+}): Theme {
+  return resolveTheme(settings.useCustomTheme ? CUSTOM_THEME_ID : settings.theme, settings.customTheme)
+}
+
 /** The colours a custom theme can set, in the order Settings shows them. */
 export const CUSTOM_THEME_FIELDS: [keyof Omit<CustomTheme, 'base'>, string, string][] = [
   ['bg', 'Background', 'The page behind everything, the tab strip and toolbar.'],

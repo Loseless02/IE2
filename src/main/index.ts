@@ -82,7 +82,7 @@ import {
   onUpdateState,
   updateState
 } from './updater'
-import { resolveTheme } from '../shared/themes'
+import { activeTheme } from '../shared/themes'
 import type { TabGroupColour } from '../shared/groups'
 import type { Settings } from '../shared/settings'
 import {
@@ -141,6 +141,8 @@ interface Shell {
   sidebar: WebContentsView | null
   /** Chrome height at the last layout, to notice the bookmarks bar coming or going. */
   lastTop: number
+  /** The launch animation is playing: the chrome covers the whole window. */
+  booting: boolean
   /**
    * Where a tab dragged in from another window would land in this strip, as
    * last reported by this window's renderer, or null when nothing is hovering.
@@ -221,7 +223,7 @@ function focusedShell(): Shell | undefined {
  */
 function overlayColours(): { color: string; symbolColor: string; height: number } {
   const settings = getSettings()
-  const { colours } = resolveTheme(settings.theme, settings.customTheme)
+  const { colours } = activeTheme(settings)
 
   return {
     color: colours.bg,
@@ -258,7 +260,7 @@ function createWindow(startUrl?: string, torn?: TornTab): void {
     minWidth: 520,
     minHeight: 400,
     title: 'IE2',
-    backgroundColor: resolveTheme(getSettings().theme, getSettings().customTheme).colours.bg,
+    backgroundColor: activeTheme(getSettings()).colours.bg,
     // No OS title bar and no menu bar: the tab strip *is* the title bar, with
     // the native window buttons overlaid on the right of it. Keeping them
     // native preserves Windows 11 snap layouts on hover.
@@ -289,8 +291,18 @@ function createWindow(startUrl?: string, torn?: TornTab): void {
     dropdownHeight: 0,
     dropIndex: null,
     sidebar: null,
-    lastTop: 0
+    lastTop: 0,
+    // The first window of a launch plays the opening animation.
+    booting: !torn && !launched && getSettings().animations
   } as Shell
+  launched = true
+  if (shell.booting) {
+    // However the animation goes, it never holds the window for long.
+    setTimeout(() => {
+      shell.booting = false
+      if (!win.isDestroyed()) layoutChrome(shell)
+    }, 4000)
+  }
 
   shell.tabs = new TabManager(
     win,
@@ -480,7 +492,7 @@ function createAppWindow(url: string): void {
   }
 
   const icon = appIconPath(host)
-  const theme = resolveTheme(getSettings().theme, getSettings().customTheme)
+  const theme = activeTheme(getSettings())
 
   const win = new BaseWindow({
     width: 1100,
@@ -801,7 +813,7 @@ function toggleSidebar(shell: Shell, open = !shell.sidebar): void {
         nodeIntegration: false
       }
     })
-    view.setBackgroundColor(resolveTheme(getSettings().theme, getSettings().customTheme).colours.bg)
+    view.setBackgroundColor(activeTheme(getSettings()).colours.bg)
 
     // It only ever shows the bookmarks page; anything else is refused.
     view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -907,8 +919,12 @@ function withAdblock(shell: Shell, state: TabsState): BrowserState {
  * later, so without this the page would paint over the toolbar and dropdown.
  */
 function raiseChrome(shell: Shell): void {
+  // Taking a view out and putting it back drops keyboard focus, so a page
+  // that had it — when a link opened a background tab — lost the next key.
+  const focused = webContents.getFocusedWebContents()
   shell.window.contentView.removeChildView(shell.chrome)
   shell.window.contentView.addChildView(shell.chrome)
+  if (focused && !focused.isDestroyed()) focused.focus()
 }
 
 /** Whether this window shows the bookmarks bar right now. */
@@ -926,9 +942,12 @@ function chromeTop(shell: Shell): number {
   return CHROME_HEIGHT + (barShown(shell) ? BOOKMARKS_BAR_HEIGHT : 0)
 }
 
+/** A window has opened since launch; later ones skip the opening animation. */
+let launched = false
+
 function layoutChrome(shell: Shell): void {
   const { width, height } = shell.window.getContentBounds()
-  const wanted = chromeTop(shell) + shell.dropdownHeight
+  const wanted = shell.booting ? height : chromeTop(shell) + shell.dropdownHeight
   shell.chrome.setBounds({ x: 0, y: 0, width, height: Math.min(wanted, height) })
 }
 
@@ -945,7 +964,17 @@ function layoutShell(shell: Shell): void {
     height: Math.max(0, height - top)
   })
   shell.tabs.setInsets(top, shell.sidebar ? SIDEBAR_WIDTH : 0)
+
+  // With the frame on, the window shows round the page in the toolbar's own
+  // colour, so the page reads as set into the browser.
+  const frame = getSettings().pageFrame ? PAGE_FRAME : 0
+  const colours = activeTheme(getSettings()).colours
+  shell.window.setBackgroundColor(frame ? colours.border : colours.bg)
+  shell.tabs.setFrame(frame)
 }
+
+/** Width of the margin round the page when the page frame is on. */
+const PAGE_FRAME = 6
 
 /**
  * Grow the chrome view over the page so the omnibox dropdown has somewhere to
@@ -1532,6 +1561,13 @@ function registerIpc(): void {
   })
   ipcMain.handle('bookmark:folders', () => bookmarkFolders())
   ipcMain.handle('net:public-ip', () => publicIp())
+  ipcMain.handle('view:booting', (e) => shells.get(e.sender.id)?.booting ?? false)
+  ipcMain.handle('view:booted', (e) => {
+    const shell = shells.get(e.sender.id)
+    if (!shell || !shell.booting) return
+    shell.booting = false
+    layoutChrome(shell)
+  })
   ipcMain.handle('permission:answer', (_e, id: number, allow: boolean, remember: boolean) =>
     answerPermission(id, allow, remember)
   )

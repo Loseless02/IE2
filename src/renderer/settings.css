@@ -77,6 +77,7 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-x: hidden;
   overflow-y: auto;
   flex: 1;
 }
@@ -245,38 +246,6 @@ input[type='number'] {
 select:focus,
 input:focus {
   border-color: var(--accent);
-}
-
-.switch {
-  position: relative;
-  width: 42px;
-  height: 24px;
-  flex: none;
-  border: 0;
-  border-radius: 12px;
-  background: #4a505a;
-  cursor: default;
-  transition: background 160ms ease;
-}
-
-.switch::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.switch.on {
-  background: var(--accent);
-}
-
-.switch.on::after {
-  transform: translateX(18px);
 }
 
 .accents {
@@ -799,22 +768,15 @@ nav button {
     transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-nav button:hover {
-  transform: translateX(3px);
-}
-
+/* No sideways nudge on hover: it pushed the buttons past the edge of the list
+   and brought up a horizontal scrollbar under it. */
 nav button:active {
-  transform: translateX(1px) scale(0.99);
+  transform: scale(0.99);
 }
 
-/* Rows lift very slightly, enough to show which one the pointer owns. */
-.row {
-  transition: background 140ms ease;
-}
-
-.row:hover {
-  background: var(--hover);
-}
+/* Rows do not light up under the pointer: a row is not something you click,
+   its control is, and highlighting the whole card when the pointer was on the
+   button said the opposite. */
 
 /* Controls answer. */
 .action,
@@ -833,16 +795,6 @@ input[type='text'] {
 
 .action:active:not(:disabled) {
   transform: translateY(0) scale(0.97);
-}
-
-/* The switch knob slides, and the track fills behind it. */
-.switch {
-  transition: background 200ms ease, border-color 200ms ease;
-}
-
-.switch .dot,
-.switch::after {
-  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), background 200ms ease;
 }
 
 /* Colour swatches and wallpapers grow under the pointer. */
@@ -938,4 +890,16 @@ input[type='text'] {
 .theme-colour .action:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* The custom theme's colours while its switch is off: visible, so it is easy
+   to find, but plainly not in use. */
+.group.locked {
+  opacity: 0.45;
+  filter: grayscale(0.7);
+  transition: opacity 240ms ease, filter 240ms ease;
+}
+
+.group {
+  transition: opacity 240ms ease, filter 240ms ease;
 }

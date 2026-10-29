@@ -312,3 +312,16 @@ body.sidebar .bookmark {
 .bookmark {
   transition: background 120ms ease;
 }
+
+/* Folders and rows arrive in order rather than all at once. */
+.folder,
+.bookmark {
+  animation: list-in 220ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes list-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}

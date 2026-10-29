@@ -1,4 +1,4 @@
-import { BaseWindow, WebContentsView, shell } from 'electron'
+import { BaseWindow, WebContentsView, shell, webContents } from 'electron'
 import { join } from 'node:path'
 import {
   CHROME_HEIGHT,
@@ -82,6 +82,8 @@ export interface Tab {
   owner: TabManager
   /** What the tab was opened with — its address until the first page commits. */
   startUrl: string
+  /** The tab whose link opened this one, so its links land beside it in order. */
+  openerId: number | null
   view: WebContentsView
   favicon: string | null
   amnesia: boolean
@@ -115,6 +117,11 @@ export interface Tab {
   sleepingIndex: number
   /** When this tab was last looked at, for deciding what has gone stale. */
   lastActiveAt: number
+  /**
+   * When it was last actually in front, or 0 if it never has been — a tab
+   * opened in the background is not where closing another should lead.
+   */
+  lastViewedAt: number
   /** Group membership, or null. A pinned tab is never in a group. */
   groupId: number | null
   /**
@@ -134,6 +141,7 @@ export interface TabOptions {
   index?: number
   pinned?: boolean
   groupId?: number | null
+  openerId?: number | null
 }
 
 export type Shortcut =
@@ -238,6 +246,7 @@ export class TabManager {
   /** See {@link setInsets}. */
   private insetTop = CHROME_HEIGHT
   private insetRight = 0
+  private frame = 0
 
   /** Tab groups, keyed by id. Strip order is derived from the tabs themselves. */
   private groups = new Map<number, TabGroup>()
@@ -279,6 +288,7 @@ export class TabManager {
       id: nextTabId++,
       owner: this,
       startUrl: url,
+      openerId: options.openerId ?? null,
       view,
       favicon: null,
       amnesia,
@@ -294,7 +304,8 @@ export class TabManager {
       sleepingTitle: '',
       sleepingEntries: [],
       sleepingIndex: 0,
-      lastActiveAt: Date.now()
+      lastActiveAt: Date.now(),
+      lastViewedAt: 0
     }
     // A link dropped between two tabs opens where it was dropped.
     if (options.index === undefined) this.tabs.push(tab)
@@ -305,6 +316,8 @@ export class TabManager {
     this.wire(tab)
     attachContextMenu(view.webContents, () => tab.owner, amnesia)
 
+    const focusedBefore = activate ? null : webContents.getFocusedWebContents()
+
     this.window.contentView.addChildView(view)
     this.raiseChrome()
     view.setVisible(false)
@@ -312,8 +325,14 @@ export class TabManager {
 
     // A brand new tab has nothing to read, so the caret belongs in the omnibox
     // rather than in the page.
-    if (activate) this.activate(tab.id, { focusPage: !tab.wantsOmnibox })
-    else this.layout()
+    if (activate) {
+      this.activate(tab.id, { focusPage: !tab.wantsOmnibox })
+    } else {
+      this.layout()
+      // Adding a view moves keyboard focus to it; give it back to whatever
+      // had it. (Its page taking focus later is handled in wire().)
+      if (focusedBefore && !focusedBefore.isDestroyed()) focusedBefore.focus()
+    }
 
     if (tab.wantsOmnibox) {
       this.onShortcut('focus-omnibox')
@@ -363,7 +382,7 @@ export class TabManager {
     tab.view.webContents.close()
 
     if (this.activeId === id) {
-      const next = this.tabs[index] ?? this.tabs[this.tabs.length - 1]
+      const next = this.lastUsed(index)
       if (next) this.activate(next.id)
       else this.activeId = null
     }
@@ -372,12 +391,37 @@ export class TabManager {
     this.emit()
   }
 
+  /**
+   * The tab looked at most recently: where closing the one in front returns
+   * to. Working in tab 3, opening tab 6 to look something up and closing it
+   * goes back to 3 — not to 5, then 4, then 3.
+   */
+  private lastUsed(closedAt: number): Tab | undefined {
+    let best: Tab | undefined
+    for (const tab of this.tabs) if (!best || tab.lastViewedAt > best.lastViewedAt) best = tab
+    // Nothing else has been looked at yet (a restored session): the neighbour.
+    if (!best || best.lastViewedAt === 0) return this.tabs[closedAt] ?? this.tabs[this.tabs.length - 1]
+    return best
+  }
+
+  /**
+   * Where a tab opened from a link goes: right after the tab that opened it,
+   * after any others that tab has already opened, so a row of links opened one
+   * after another stays in the order they were clicked.
+   */
+  private slotAfter(opener: Tab): number {
+    let index = this.tabs.indexOf(opener)
+    while (this.tabs[index + 1]?.openerId === opener.id) index++
+    return index + 1
+  }
+
   activate(id: number, options: { focusPage?: boolean } = {}): void {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab) return
 
     this.activeId = id
     tab.lastActiveAt = Date.now()
+    tab.lastViewedAt = Date.now()
     if (tab.asleep) this.wake(tab)
 
     // Activating the companion pane would leave it beside itself.
@@ -635,7 +679,7 @@ export class TabManager {
     tab.groupId = null
 
     if (this.activeId === id) {
-      const next = this.tabs[index] ?? this.tabs[this.tabs.length - 1]
+      const next = this.lastUsed(index)
       if (next) this.activate(next.id, { focusPage: false })
       else this.activeId = null
     }
@@ -671,34 +715,49 @@ export class TabManager {
     this.layout()
   }
 
+  /**
+   * The page frame: a margin round the page and rounded corners, so the page
+   * sits inside the browser like a card. 0 turns it off.
+   */
+  setFrame(px: number): void {
+    if (px === this.frame) return
+    this.frame = px
+    this.layout()
+  }
+
   layout(): void {
     const bounds = this.window.getContentBounds()
-    const width = Math.max(0, bounds.width - this.insetRight)
-    const height = bounds.height
+    const frame = this.frame
+    const left = frame
+    const width = Math.max(0, bounds.width - this.insetRight - frame * 2)
     const top = this.insetTop
-    const usable = Math.max(0, height - top)
+    const usable = Math.max(0, bounds.height - top - frame)
+    const radius = frame > 0 ? 10 : 0
+
+    for (const tab of this.tabs) tab.view.setBorderRadius(radius)
 
     const split = this.splitId !== null ? this.tabs.find((t) => t.id === this.splitId) : undefined
 
     if (!split || split.id === this.activeId) {
-      const bounds = { x: 0, y: top, width, height: usable }
+      const bounds = { x: left, y: top, width, height: usable }
       for (const tab of this.tabs) tab.view.setBounds(bounds)
       return
     }
 
-    // A one pixel gutter, so the two pages do not appear to bleed together.
-    const gutter = 1
+    // A gutter between the two pages: the frame's width when there is one, a
+    // single pixel otherwise, so they never appear to bleed together.
+    const gutter = Math.max(1, frame)
     const leftWidth = Math.round((width - gutter) * this.splitRatio)
     const rightWidth = width - gutter - leftWidth
 
     for (const tab of this.tabs) {
       if (tab.id === this.activeId) {
-        tab.view.setBounds({ x: 0, y: top, width: leftWidth, height: usable })
+        tab.view.setBounds({ x: left, y: top, width: leftWidth, height: usable })
       } else if (tab.id === split.id) {
-        tab.view.setBounds({ x: leftWidth + gutter, y: top, width: rightWidth, height: usable })
+        tab.view.setBounds({ x: left + leftWidth + gutter, y: top, width: rightWidth, height: usable })
       } else {
         // Off-screen rather than resized, so a hidden page keeps its layout.
-        tab.view.setBounds({ x: 0, y: top, width, height: usable })
+        tab.view.setBounds({ x: left, y: top, width, height: usable })
       }
     }
   }
@@ -1180,6 +1239,24 @@ export class TabManager {
     })
 
     wc.on('focus', () => {
+      // A page out of sight never keeps focus. A tab opened in the background
+      // takes it when its first page commits, and a hidden page swallows every
+      // key after that — Ctrl+T, typing, anything — so it goes straight back
+      // to the tab in front.
+      // Handed back on the next tick: refocusing inside the focus event itself
+      // is undone by Chromium finishing the change it is announcing.
+      const manager = owner()
+      if (manager.activeId !== tab.id && manager.splitId !== tab.id) {
+        const giveBack = (): void => {
+          const front = owner()
+          if (front.activeId === tab.id || !wc.isFocused()) return
+          front.active()?.view.webContents.focus()
+        }
+        setTimeout(giveBack, 0)
+        setTimeout(giveBack, 120)
+        return
+      }
+
       if (!tab.wantsOmnibox) return
 
       // Past the grace window, focus on the page came from the user, and the
@@ -1230,10 +1307,20 @@ export class TabManager {
       owner().emit()
     })
 
-    // target=_blank / window.open: open a real tab instead of a popup window.
-    // A link opened from an amnesia tab stays in amnesia.
-    wc.setWindowOpenHandler(({ url }) => {
-      if (isAllowedUrl(url)) owner().createTab(url, { amnesia: tab.amnesia })
+    // target=_blank, window.open, middle-click and Ctrl+click all open a real
+    // tab instead of a popup window. Middle- and Ctrl+click ask for it in the
+    // background: it opens beside this one and you stay where you are. A link
+    // opened from an amnesia tab stays in amnesia.
+    wc.setWindowOpenHandler(({ url, disposition }) => {
+      if (isAllowedUrl(url)) {
+        owner().createTab(url, {
+          amnesia: tab.amnesia,
+          activate: disposition !== 'background-tab',
+          index: owner().slotAfter(tab),
+          groupId: tab.groupId,
+          openerId: tab.id
+        })
+      }
       return { action: 'deny' }
     })
 

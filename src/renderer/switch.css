@@ -1,0 +1,113 @@
+/* The on/off switch used everywhere: a round button whose knob turns over from
+   a cross to a tick. Pure CSS transitions on transform and colour — the GPU
+   does the work, so it costs nothing to have many on a page.
+
+   Selectors repeat the class on purpose: panels and forms style their own
+   buttons and checkboxes (`.panel-head button`, `.check input`), and the
+   switch has to win against all of them without !important. */
+
+.x-switch.x-switch {
+  --size: 40px;
+  --off: #fb7185;
+  --on: #10b981;
+  position: relative;
+  flex: none;
+  width: var(--size);
+  height: var(--size);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--off);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: background-color 300ms ease;
+}
+
+.x-switch.x-switch.small {
+  --size: 28px;
+}
+
+.x-switch.x-switch:hover {
+  background: var(--off);
+}
+
+.x-switch.x-switch::after {
+  content: '✕';
+  position: absolute;
+  inset: calc(var(--size) * 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f9fafb;
+  color: #e11d48;
+  font: 700 calc(var(--size) * 0.36) / 1 system-ui, 'Segoe UI', sans-serif;
+  transform: rotate(-180deg);
+  transition:
+    transform 500ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    color 300ms ease;
+}
+
+.x-switch.x-switch:hover::after {
+  transform: rotate(-180deg) scale(0.75);
+}
+
+.x-switch.x-switch.on,
+.x-switch.x-switch:checked,
+.x-switch.x-switch.on:hover,
+.x-switch.x-switch:checked:hover {
+  background: var(--on);
+}
+
+.x-switch.x-switch.on::after,
+.x-switch.x-switch:checked::after {
+  content: '✓';
+  color: #059669;
+  transform: rotate(0deg);
+}
+
+.x-switch.x-switch.on:hover::after,
+.x-switch.x-switch:checked:hover::after {
+  transform: rotate(0deg) scale(0.75);
+}
+
+.x-switch.x-switch:focus-visible {
+  outline: 2px solid var(--accent, #4f8cff);
+  outline-offset: 3px;
+}
+
+.x-switch.x-switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.x-switch.x-switch:disabled:hover::after {
+  transform: rotate(-180deg);
+}
+
+.x-switch.x-switch.on:disabled:hover::after,
+.x-switch.x-switch:checked:disabled:hover::after {
+  transform: rotate(0deg);
+}
+
+/* A checkbox drawn as the switch sits in line with its words. */
+input.x-switch.x-switch {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* A switch with its words beside it, for panels and forms. */
+.x-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.no-motion .x-switch.x-switch,
+.no-motion .x-switch.x-switch::after {
+  transition: none;
+}

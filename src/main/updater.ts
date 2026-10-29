@@ -64,14 +64,22 @@ export function initUpdater(): void {
     })
 
     // Pressing "Check for updates" is asking for the update, so it comes down
-    // straight away. The check made quietly at startup only reports.
+    // straight away. The check made quietly at startup only reports — unless
+    // the user asked for updates to install themselves.
     if (downloadWhenFound) {
       downloadWhenFound = false
       void download()
+    } else if (startupCheck && getSettings().autoInstallUpdates) {
+      installWhenReady = true
+      void download()
     }
+    startupCheck = false
   })
 
-  autoUpdater.on('update-not-available', () => set({ status: 'current', progress: 0 }))
+  autoUpdater.on('update-not-available', () => {
+    startupCheck = false
+    set({ status: 'current', progress: 0 })
+  })
 
   autoUpdater.on('download-progress', (progress) => {
     set({ status: 'downloading', progress: Math.round(progress.percent) })
@@ -79,6 +87,12 @@ export function initUpdater(): void {
 
   autoUpdater.on('update-downloaded', (info) => {
     set({ status: 'ready', version: info.version, progress: 100 })
+    // Installing on its own: restart into it now. The session is saved on the
+    // way out, so the tabs come back.
+    if (installWhenReady) {
+      installWhenReady = false
+      setTimeout(installNow, 1500)
+    }
   })
 
   autoUpdater.on('error', (error) => {
@@ -92,11 +106,22 @@ export function initUpdater(): void {
   }
 
   // A little after start, so it never competes with restoring the session.
-  if (getSettings().autoUpdate) setTimeout(() => void check(), 8000)
+  if (getSettings().autoUpdate) {
+    setTimeout(() => {
+      startupCheck = true
+      void check()
+    }, 8000)
+  }
 }
 
 /** Set by a check the user asked for, so a found update downloads at once. */
 let downloadWhenFound = false
+
+/** The quiet check made at startup is the one in flight. */
+let startupCheck = false
+
+/** Install as soon as the download finishes: the automatic-install path. */
+let installWhenReady = false
 
 /**
  * Ask GitHub what the latest release is. Safe to call when it cannot work.

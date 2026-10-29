@@ -1,4 +1,5 @@
 import type { HistoryHit, RecallStats } from '../shared/types'
+import './switch.css'
 import { IMAGE_FITS, toHex, type Settings } from '../shared/settings'
 import { applyTheme } from './theme'
 import { setIcon } from './icons'

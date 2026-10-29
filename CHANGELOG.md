@@ -4,6 +4,28 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.8.2
+
+- A short opening animation each time IE2 starts
+- The address bar finishes the address as you type — "y" becomes youtube.com
+  if that is where you go — so Enter takes you there
+- Middle- and Ctrl+click open links in a tab behind, right next to the page
+- Closing a tab goes back to the tab you were on before it, not its neighbour
+- Tabs open and close smoothly: a closing tab fades where it stands, then the
+  others close the gap
+- Much richer right-click menus for links, images, video, selected text and
+  spelling — including Copy clean link, which drops tracking codes
+- A rounded frame round the page (Settings → Appearance → Page frame)
+- Custom theme is a switch of its own now: its colours stay visible, locked,
+  until it is on, and switching it off brings back the theme you had
+- New on/off switches throughout
+- Public IP shows the country too, without asking for your location
+- Install updates automatically: an option to download and restart into a new
+  version as soon as one is found at startup
+- Thunder no longer starts with a hiss
+- Settings: no sideways scrollbar in the menu, and cards no longer light up
+  unless they can be clicked
+
 ## 0.8.1
 
 - Custom theme: pick Theme → Custom… in Settings and set every colour yourself —

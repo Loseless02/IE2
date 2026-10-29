@@ -1061,3 +1061,50 @@ export function setFxForSite(origin: string, settings: string | null): void {
       'INSERT INTO fx_sites (origin, settings) VALUES (?, ?) ON CONFLICT(origin) DO UPDATE SET settings = excluded.settings'
     ).run(origin, settings)
 }
+
+/**
+ * The site most often visited whose address starts with what was typed, for
+ * finishing the omnibox inline: "y" becomes "youtube.com". Hosts are compared
+ * without "www.", and visits to every page of a site count toward it.
+ */
+export function inlineHost(typed: string): { host: string; url: string } | null {
+  const query = typed.trim().toLowerCase()
+  if (!query || /[\s/]/.test(query)) return null
+
+  const rows = db
+    .prepare(
+      `SELECT url, visit_count AS visits FROM pages
+       WHERE url LIKE ? OR url LIKE ? OR url LIKE ? OR url LIKE ?
+       ORDER BY visit_count DESC LIMIT 200`
+    )
+    .all(`https://${query}%`, `https://www.${query}%`, `http://${query}%`, `http://www.${query}%`) as unknown as {
+    url: string
+    visits: number
+  }[]
+
+  const sites = new Map<string, { visits: number; origin: string; best: number }>()
+  for (const row of rows) {
+    let parsed: URL
+    try {
+      parsed = new URL(row.url)
+    } catch {
+      continue
+    }
+    const host = parsed.hostname.replace(/^www\./, '')
+    if (!host.startsWith(query)) continue
+    const site = sites.get(host) ?? { visits: 0, origin: parsed.origin, best: 0 }
+    site.visits += row.visits
+    // The origin most visited under that host is the one to go to.
+    if (row.visits > site.best) {
+      site.best = row.visits
+      site.origin = parsed.origin
+    }
+    sites.set(host, site)
+  }
+
+  let pick: { host: string; url: string; visits: number } | null = null
+  for (const [host, site] of sites) {
+    if (!pick || site.visits > pick.visits) pick = { host, url: `${site.origin}/`, visits: site.visits }
+  }
+  return pick && { host: pick.host, url: pick.url }
+}

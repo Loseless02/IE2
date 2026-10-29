@@ -174,29 +174,46 @@ body {
 .tab {
   transition:
     background 120ms ease,
-    width 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 140ms ease,
-    transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    width 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    padding 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 200ms ease,
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* A tab starts as a sliver and expands into place. The class is removed on the
-   next frame, so the transition above does the work. */
+/* A new tab opens from nothing: it widens into its slot while rising and
+   fading in, so the neighbours make room as it arrives. The class comes off
+   two frames after the tab is added, and the transition above does the rest. */
 .tab.entering {
   width: 0 !important;
   min-width: 0;
   padding-left: 0;
   padding-right: 0;
   opacity: 0;
+  transform: translateY(10px) scale(0.92);
 }
 
-/* On the way out it collapses instead of vanishing, so the strip closes up. */
+/* On the way out it slides left and fades where it stands, keeping its width
+   so nothing else moves; then it folds to nothing and the neighbours close
+   the gap. */
 .tab.leaving {
+  opacity: 0;
+  transform: translateX(-18px);
+  pointer-events: none;
+  transition:
+    opacity 150ms ease-in,
+    transform 150ms ease-in;
+}
+
+.tab.leaving.gone {
   width: 0 !important;
   min-width: 0;
+  margin-right: -4px;
   padding-left: 0;
   padding-right: 0;
-  opacity: 0;
-  pointer-events: none;
+  transition:
+    width 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    margin 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    padding 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Mid-reorder: the tab is being translated from its old position. */
@@ -897,33 +914,15 @@ body {
 
 
 
-.switch {
+/* The blocking switch, with the word for its state beside it. */
+.shield-switch {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px 3px 7px !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 12px !important;
-  background: transparent;
-  color: var(--text) !important;
-  font-size: 11px !important;
+  gap: 8px;
+  color: var(--text);
+  font-size: 11px;
   text-transform: none;
   letter-spacing: 0;
-}
-
-.switch .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #5fce7e;
-}
-
-.switch.off .dot {
-  background: #6a7078;
-}
-
-.switch.off {
-  color: var(--text-dim) !important;
 }
 
 #shield-counts {
@@ -2168,7 +2167,7 @@ body {
 
 .ip-row .fam {
   flex: none;
-  width: 34px;
+  width: 52px;
   color: var(--text-dim);
   font-size: 11px;
   font-weight: 600;
@@ -2627,4 +2626,157 @@ body {
 /* Effects are on in this tab. */
 #fx.on {
   color: var(--accent);
+}
+
+/* --- the opening animation ------------------------------------------------------ */
+
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--bg);
+  transition: opacity 340ms ease;
+}
+
+#boot.leaving {
+  opacity: 0;
+}
+
+.boot-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 140px;
+  height: 140px;
+  animation: boot-lift 1100ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.boot-ring {
+  position: absolute;
+  inset: 0;
+  transform: rotate(-90deg);
+}
+
+/* The ring draws itself once round. */
+.boot-ring circle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 327;
+  stroke-dashoffset: 327;
+  animation: boot-ring 900ms cubic-bezier(0.65, 0, 0.35, 1) 80ms forwards;
+}
+
+.boot-word {
+  display: flex;
+  gap: 2px;
+  color: var(--text);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Each letter rises into place after the one before it. */
+.boot-word span {
+  display: inline-block;
+  animation: boot-letter 520ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.boot-word span:nth-child(1) { animation-delay: 140ms; }
+.boot-word span:nth-child(2) { animation-delay: 220ms; }
+.boot-word span:nth-child(3) {
+  color: var(--accent);
+  animation-delay: 300ms;
+}
+
+.boot-line {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  animation: boot-letter 600ms ease 420ms backwards;
+}
+
+@keyframes boot-ring {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes boot-letter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes boot-lift {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+/* --- light motion ------------------------------------------------------------
+   Opacity and transform only, which the compositor animates without laying the
+   page out again; all of it is switched off with Animations. */
+
+/* The bookmarks bar fills in from the left when it first appears — not on
+   every redraw, which happens each time a folder closes. */
+#bookmarks-bar.arrive .bar-item {
+  animation: bar-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+#bookmarks-bar.arrive .bar-item:nth-child(2) { animation-delay: 20ms; }
+#bookmarks-bar.arrive .bar-item:nth-child(3) { animation-delay: 40ms; }
+#bookmarks-bar.arrive .bar-item:nth-child(4) { animation-delay: 60ms; }
+#bookmarks-bar.arrive .bar-item:nth-child(5) { animation-delay: 80ms; }
+#bookmarks-bar.arrive .bar-item:nth-child(n + 6) { animation-delay: 100ms; }
+
+@keyframes bar-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+
+/* Toolbar tools give under the pointer. */
+#toolbar > button:not(:disabled):not(.unavailable):hover svg {
+  transform: scale(1.08);
+}
+
+#toolbar > button svg {
+  transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* A tool turning on (Mood playing, effects on) eases into its colour. */
+#mood,
+#fx,
+#bookmarks,
+#split,
+#pip {
+  transition: color 240ms ease, background 120ms ease, transform 120ms ease;
+}
+
+/* Popovers settle with a touch of overshoot rather than appearing flat. */
+#ip-panel,
+#mood-panel,
+#pw-panel,
+#site-panel,
+#perm-panel,
+#bm-edit-panel {
+  animation: pop-in 200ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
 }

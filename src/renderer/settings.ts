@@ -17,6 +17,7 @@ import { BUILT_IN_WALLPAPERS } from '../shared/wallpapers'
 
 import { applyTheme } from './theme'
 import { icon } from './icons'
+import { createSwitch } from './switch'
 import { confirmDialog, promptDialog } from './dialog'
 import { buildLabel } from '../shared/build'
 import { uiKey } from '../shared/i18n'
@@ -95,23 +96,13 @@ function group(...rows: HTMLElement[]): HTMLElement {
 }
 
 function toggle(key: keyof Settings): HTMLElement {
-  const button = document.createElement('button')
-  button.className = settings[key] ? 'switch on' : 'switch'
-  button.setAttribute('role', 'switch')
-  button.setAttribute('aria-checked', String(Boolean(settings[key])))
-
-  button.addEventListener('click', async () => {
-    const next = !settings[key]
-    button.classList.toggle('on', next)
-    button.setAttribute('aria-checked', String(next))
+  return createSwitch(Boolean(settings[key]), async (next) => {
     settings = await window.ie2.setSetting(key, next)
     applyTheme(settings)
 
     // Some switches decide whether other rows belong on screen at all.
     if (key === 'sleepTabs') rerender('performance')
   })
-
-  return button
 }
 
 function select(key: keyof Settings, options: [string, string][]): HTMLElement {
@@ -708,28 +699,36 @@ function themePicker(): HTMLElement {
     node.append(group)
   }
 
-  const yours = document.createElement('optgroup')
-  yours.label = 'Yours'
-  const custom = document.createElement('option')
-  custom.value = CUSTOM_THEME_ID
-  custom.textContent = 'Custom…'
-  custom.selected = settings.theme === CUSTOM_THEME_ID
-  yours.append(custom)
-  node.append(yours)
-
   node.addEventListener('change', async () => {
-    const wasCustom = settings.theme === CUSTOM_THEME_ID
-    // A new custom theme starts from whatever was on screen a moment ago.
-    if (node.value === CUSTOM_THEME_ID && !wasCustom) {
-      settings = await window.ie2.setSetting('customTheme', { ...settings.customTheme, base: settings.theme })
-    }
     settings = await window.ie2.setSetting('theme', node.value)
     applyTheme(settings)
-    // The colour editor appears and disappears with the choice.
-    if (wasCustom !== (settings.theme === CUSTOM_THEME_ID)) rerender('appearance')
   })
 
-  return node
+  // While the custom theme is on the list does not apply, so it steps aside;
+  // the choice in it is kept for when the switch goes off again.
+  if (!settings.useCustomTheme) return node
+  const note = document.createElement('span')
+  note.className = 'static-value'
+  note.textContent = t('Your custom theme is on')
+  return note
+}
+
+/**
+ * The custom theme's on/off. On: the colour card below unlocks and paints the
+ * interface. Off: the theme picked from the list comes back, and the custom
+ * colours stay saved, locked, for next time.
+ */
+function customThemeSwitch(): HTMLElement {
+  return createSwitch(settings.useCustomTheme, async (on) => {
+    // Nothing customised yet: start from whatever is on screen right now.
+    const untouched = CUSTOM_THEME_FIELDS.every(([key]) => !settings.customTheme[key])
+    if (on && untouched) {
+      settings = await window.ie2.setSetting('customTheme', { ...settings.customTheme, base: settings.theme })
+    }
+    settings = await window.ie2.setSetting('useCustomTheme', on)
+    applyTheme(settings)
+    rerender('appearance')
+  })
 }
 
 /**
@@ -738,7 +737,13 @@ function themePicker(): HTMLElement {
  */
 function customThemeGroup(): HTMLElement {
   const wrap = document.createElement('div')
-  wrap.className = 'group'
+  // Always on the page, so it is easy to find; locked and greyed until the
+  // custom theme is switched on.
+  const locked = !settings.useCustomTheme
+  wrap.className = locked ? 'group locked' : 'group'
+  // inert: nothing inside can be clicked, typed into or tabbed to.
+  wrap.inert = locked
+  if (locked) wrap.title = t('Switch on Custom theme above to edit these')
 
   const save = async (changes: Partial<Settings['customTheme']>): Promise<void> => {
     settings = await window.ie2.setSetting('customTheme', { ...settings.customTheme, ...changes })
@@ -914,8 +919,13 @@ const SECTIONS: Section[] = [
       group(
         row(
           'Theme',
-          'The whole interface: dark or light, and everything in between — or Custom, to pick every colour yourself.',
+          'The whole interface: dark or light, and everything in between.',
           themePicker()
+        ),
+        row(
+          'Custom theme',
+          'Pick every colour yourself, in the card below. Off goes back to the theme chosen above.',
+          customThemeSwitch()
         ),
         row(
           'Accent colour',
@@ -939,6 +949,11 @@ const SECTIONS: Section[] = [
             ['narrow', 'Narrow']
           ])
         ),
+        row(
+          'Page frame',
+          'A margin with rounded corners round the page, so it sits inside the browser like a card.',
+          toggle('pageFrame')
+        ),
         row('Animations', 'Panel and button motion. Off is instant.', toggle('animations')),
         row(
           'Restyle website scrollbars',
@@ -946,7 +961,7 @@ const SECTIONS: Section[] = [
           toggle('stylePageScrollbars')
         )
       ),
-      ...(settings.theme === CUSTOM_THEME_ID ? [customThemeGroup()] : []),
+      customThemeGroup(),
       group(
         row(
           'Bookmarks bar',
@@ -1213,6 +1228,11 @@ const SECTIONS: Section[] = [
           'Automatic update check',
           'Ask GitHub for the latest release when the browser starts. Only version numbers are compared — nothing about you is sent. With this off, the button above still works.',
           toggle('autoUpdate')
+        ),
+        row(
+          'Install updates automatically',
+          'When the check at startup finds a new version, download it and restart into it straight away — your tabs come back. Off, it only tells you.',
+          toggle('autoInstallUpdates')
         ),
         row(
           'Restart the browser',
