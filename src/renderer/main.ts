@@ -4,19 +4,54 @@ import { icon, setIcon } from './icons'
 import qrcode from 'qrcode-generator'
 import { EN } from '../shared/i18n'
 import {
+  BOOKMARKS_BAR,
   BOOKMARKS_URL,
   HELP_URL,
   HISTORY_URL,
+  HOME_URL,
+  PASSWORDS_URL,
   SETTINGS_URL,
+  type BookmarkEntry,
   type BrowserState,
   type ClosedTab,
   type DownloadState,
   type MediaState,
+  type PasswordOffer,
+  type PasswordsForPage,
+  type PermissionKind,
+  type PermissionRequest,
+  type PublicIp,
+  type SitePermission,
   type Suggestion,
   type TabGroup,
   type TabState
 } from '../shared/types'
 import { GROUP_COLOUR_IDS, groupColour } from '../shared/groups'
+import {
+  BUILT_IN_FX_PRESETS,
+  NEUTRAL_FX,
+  cleanFx,
+  isNeutral,
+  type AudioFx,
+  type AudioFxPreset,
+  type AudioFxState
+} from '../shared/audiofx'
+import {
+  PRESETS as MOOD_PRESETS,
+  getMood,
+  liveLevel,
+  moodLayers,
+  playMood,
+  setAnimate as setMoodAnimate,
+  setLevel as setMoodLevel,
+  setMaster as setMoodMaster,
+  setPreset as setMoodPreset,
+  setSleepTimer,
+  setThunderRate,
+  sleepEndsAt,
+  stopMood,
+  thunderNow
+} from './mood'
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -49,10 +84,11 @@ const paletteList = el('palette-list')
 const omniboxWrap = el('omnibox-wrap')
 const installBtn = el<HTMLButtonElement>('install')
 const shotPanel = el('shot-panel')
-const bookmarksPanel = el('bookmarks-panel')
+const bmEditPanel = el('bm-edit-panel')
 const mediaPanel = el('media-panel')
 const qrPanel = el('qr-panel')
-const bmList = el('bm-list')
+const barEl = el('bookmarks-bar')
+const barFolderPanel = el('bar-folder-panel')
 const shotPreview = el<HTMLImageElement>('shot-preview')
 const shotInfo = el('shot-info')
 const suggestionsEl = el('suggestions')
@@ -81,10 +117,33 @@ let state: BrowserState = {
   downloads: [],
   messages: { ...EN },
   splitTabId: null,
-  settings: DEFAULT_SETTINGS
+  settings: DEFAULT_SETTINGS,
+  sidebarOpen: false
 }
 let suggestions: Suggestion[] = []
 let selected = -1
+
+/**
+ * The engine's autocomplete from the last answer. Local results come back per
+ * keystroke without it, so carrying the ones that still match keeps the list
+ * from shrinking and regrowing every time a key is pressed.
+ */
+let engineExtras: Suggestion[] = []
+
+/**
+ * The tallest the dropdown has been since it opened. The chrome view is only
+ * ever grown while typing, never shrunk: resizing it repaints the whole strip,
+ * and doing that on every keystroke is what made the list flash.
+ */
+let dropdownFloor = 0
+
+/** When the omnibox was last typed in, so a focus bounce does not select it. */
+let lastTypedAt = 0
+
+/** Typed into since the address was last shown; cleared by going or giving up. */
+let omniboxDirty = false
+let omniboxTabId: number | null = null
+let omniboxUrl = ''
 
 /**
  * Tabs the user has ctrl-clicked. A command from the tab menu applies to all of
@@ -105,7 +164,27 @@ let downloadsOpen = false
 let shieldOpen = false
 let paletteOpen = false
 let shotOpen = false
-let bookmarksOpen = false
+let bmEditOpen = false
+let ipOpen = false
+/** The audio effects panel, and the presets saved for it. */
+let fxOpen = false
+let fxPresets: AudioFxPreset[] = []
+/** The password manager's panel under the key. */
+let pwOpen = false
+/** The lock's panel: what the site in front may use. */
+let siteOpen = false
+/** Questions from sites, oldest first. One is shown at a time. */
+let permQueue: PermissionRequest[] = []
+let moodOpen = false
+/** The tab and address the key in the omnibox was last worked out for. */
+let lastPasswordTab: number | null = null
+let lastPasswordUrl = ''
+/** The toolbar tool whose tooltip is showing. */
+let tipFor: HTMLElement | null = null
+/** The page the star's editor is editing. */
+let bmEditUrl = ''
+/** The bookmarks bar folder whose list is open, if any. */
+let barFolder: string | null = null
 let mediaOpen = false
 let qrOpen = false
 let mediaTimer: number | undefined
@@ -570,6 +649,24 @@ function setupTabDrop(): void {
   })
 
   document.addEventListener('dragend', clearTarget)
+
+  // A tab dragged here from another window: mark the slot between tabs it
+  // would land in, and tell the main process, which does the actual move.
+  window.browser.onTabHover((x) => {
+    if (x === null) {
+      clearTarget()
+      return
+    }
+
+    const tabs = [...tabsEl.querySelectorAll('.tab:not(.leaving)')] as HTMLElement[]
+    const index = tabs.filter((tab) => {
+      const box = tab.getBoundingClientRect()
+      return x > box.left + box.width / 2
+    }).length
+
+    showTarget({ kind: 'open', index })
+    void window.browser.setDropIndex(index)
+  })
 }
 
 /**
@@ -665,11 +762,30 @@ function beginDrag(start: MouseEvent, id: number, node: HTMLElement): void {
     return index
   }
 
+  /**
+   * Where the pointer is on screen while the tab is outside the strip, sent at
+   * most once a frame. Another window's strip under it shows a drop marker.
+   */
+  let hoverQueued = false
+  let hoverAt = { x: 0, y: 0 }
+  const hover = (event: MouseEvent): void => {
+    hoverAt = { x: event.screenX, y: event.screenY }
+    if (hoverQueued) return
+    hoverQueued = true
+    requestAnimationFrame(() => {
+      hoverQueued = false
+      void window.browser.hoverTab(hoverAt.x, hoverAt.y)
+    })
+  }
+
   const move = (event: MouseEvent): void => {
     const movedX = Math.abs(event.clientX - start.clientX)
     const movedY = event.clientY - start.clientY
+    // Past any edge of this window — towards another one, most likely.
+    const outside =
+      event.clientX < 0 || event.clientX > window.innerWidth || event.clientY < 0
 
-    if (!dragging && movedX < 6 && movedY < TEAR_OUT_DISTANCE) return
+    if (!dragging && movedX < 6 && movedY < TEAR_OUT_DISTANCE && !outside) return
 
     if (!dragging) {
       dragging = true
@@ -677,12 +793,16 @@ function beginDrag(start: MouseEvent, id: number, node: HTMLElement): void {
       node.classList.add('dragging')
     }
 
-    // Dragged well below the strip: the tab is being pulled into its own
-    // window, so stop reordering and show that intent.
-    tearing = movedY >= TEAR_OUT_DISTANCE
+    // Dragged well below the strip or out of the window: the tab is leaving,
+    // for another window's strip or a window of its own, so stop reordering.
+    const wasTearing = tearing
+    tearing = movedY >= TEAR_OUT_DISTANCE || outside
     node.classList.toggle('tearing', tearing)
 
     follow(event.clientX)
+
+    // Coming back also reports once, which clears any marker left in another window.
+    if (tearing || wasTearing) hover(event)
     if (tearing) return
 
     // The gap the other tabs open up is the indicator — the strip reorders
@@ -694,7 +814,15 @@ function beginDrag(start: MouseEvent, id: number, node: HTMLElement): void {
     }
   }
 
-  const end = (): void => {
+  // Settle into the slot instead of snapping, so the drop reads as landing.
+  const settle = (): void => {
+    node.classList.add('settling')
+    node.style.transform = ''
+    delete node.dataset['dragX']
+    window.setTimeout(() => node.classList.remove('settling'), 200)
+  }
+
+  const end = (event: MouseEvent): void => {
     document.removeEventListener('mousemove', move)
     document.removeEventListener('mouseup', end)
 
@@ -702,15 +830,14 @@ function beginDrag(start: MouseEvent, id: number, node: HTMLElement): void {
     node.classList.remove('dragging', 'tearing')
 
     if (tearing) {
-      void window.browser.detachTab(id)
+      // Refused (a lone tab dropped on nothing): it goes back where it was.
+      void window.browser.dropTab(id, event.screenX, event.screenY).then((moved) => {
+        if (!moved) settle()
+      })
       return
     }
 
-    // Settle into the slot instead of snapping, so the drop reads as landing.
-    node.classList.add('settling')
-    node.style.transform = ''
-    delete node.dataset['dragX']
-    window.setTimeout(() => node.classList.remove('settling'), 200)
+    settle()
   }
 
   document.addEventListener('mousemove', move)
@@ -795,9 +922,9 @@ function buildPaletteItems(): PaletteItem[] {
     },
     {
       group: msg('palette.groupPage'),
-      label: state.bookmarked ? 'Remove bookmark' : 'Bookmark this page',
+      label: state.bookmarked ? 'Edit bookmark' : 'Bookmark this page',
       keys: 'Ctrl+D',
-      run: () => window.browser.toggleBookmark()
+      run: () => void openBookmarkEditor()
     },
     {
       group: msg('palette.groupPage'),
@@ -1139,6 +1266,12 @@ function drawIcons(): void {
     ['split', 'split'],
     ['qr', 'qr'],
     ['media', 'music'],
+    ['mood', 'mood'],
+    ['fx', 'fx'],
+    ['site-perms', 'lock'],
+    ['pw-key', 'key'],
+    ['passwords', 'key'],
+    ['ip', 'ip'],
     ['bookmarks', 'bookmark'],
     ['downloads', 'download'],
     ['shield', 'shield'],
@@ -1170,7 +1303,6 @@ function applyStaticText(): void {
   el('bookmarks').title = msg('toolbar.bookmarks')
   el('media').title = msg('toolbar.media')
   el('qr').title = msg('toolbar.qr')
-  el('bm-manage').textContent = msg('panel.manageAll')
   el('downloads').title = msg('toolbar.downloads')
   el('compat').title = msg('toolbar.compat')
   el('amnesia').title = msg('toolbar.amnesia')
@@ -1204,6 +1336,7 @@ function renderToolbar(): void {
   bookmarkBtn.classList.toggle('on', state.bookmarked)
   setIcon(bookmarkBtn, 'star')
   bookmarkBtn.classList.toggle('filled', state.bookmarked)
+  bookmarkBtn.title = state.bookmarked ? 'Edit this bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)'
 
   shieldBtn.classList.toggle('off', !state.adblock.enabled)
   shieldBtn.title = state.adblock.enabled
@@ -1226,6 +1359,7 @@ function renderToolbar(): void {
       : `${msg('toolbar.split')} (Ctrl+Shift+E)`
 
   compatBtn.classList.toggle('on', !!tab?.compat)
+  el('bookmarks').classList.toggle('on', state.sidebarOpen)
   amnesiaBtn.classList.toggle('on', !!tab?.amnesia)
 
   // State the browser is in, stated plainly, where the URL is.
@@ -1241,9 +1375,25 @@ function renderToolbar(): void {
     badge.hidden = true
   }
 
-  // Never stomp on what the user is currently typing.
-  if (document.activeElement !== omnibox) {
-    omnibox.value = tab && tab.url !== 'about:blank' ? tab.url : ''
+  // Never stomp on what the user is typing — but a different tab, or a page
+  // that moved on, always shows its own address. Checking focus alone left a
+  // stale address behind whenever the page took focus from the omnibox.
+  const typing = document.activeElement === omnibox && document.hasFocus()
+  if (state.activeTabId !== omniboxTabId) {
+    omniboxTabId = state.activeTabId
+    omniboxDirty = false
+  } else if ((tab?.url ?? '') !== omniboxUrl && !typing) {
+    // Typed, left unsent, and then the page went somewhere: show where it went.
+    omniboxDirty = false
+  }
+  omniboxUrl = tab?.url ?? ''
+  if (!omniboxDirty) {
+    // The new tab page reads as empty, ready to type into.
+    const shown = !tab || tab.url === 'about:blank' || tab.url.replace(/\/$/, '') === HOME_URL ? '' : tab.url
+    if (omnibox.value !== shown) {
+      omnibox.value = shown
+      if (document.activeElement === omnibox && document.hasFocus()) omnibox.select()
+    }
   }
 }
 
@@ -1261,8 +1411,18 @@ function applySettings(): void {
   el('pip').hidden = !settings.showPipButton
   el('split').hidden = !settings.showSplitButton
   el('bookmarks').hidden = !settings.showBookmarksButton
+  barEl.hidden = !settings.showBookmarksBar
+  applyToolbarOrder(settings.toolbarOrder ?? [])
   el('media').hidden = !settings.showMediaButton
   el('qr').hidden = !settings.showQrButton
+  el('mood').hidden = !settings.showMoodButton
+  el('ip').hidden = !settings.showIpButton
+  el('passwords').hidden = !settings.showPasswordsButton
+  el('fx').hidden = !settings.showFxButton
+  fxPresets = (Array.isArray(settings.audioPresets) ? settings.audioPresets : []).map((preset) => ({
+    ...cleanFx(preset),
+    name: String(preset?.name ?? 'Preset').slice(0, 30)
+  }))
   document.documentElement.dataset['omnibox'] = settings.omniboxWidth
 
   el('devtools').hidden = !showDevToolsButton
@@ -1288,6 +1448,14 @@ function render(next: BrowserState | null): void {
   renderToolbar()
   renderDownloads()
   renderShield()
+  applyToolStates()
+  void refreshSitePermissions()
+  if (next.activeTabId !== lastPasswordTab || activeTab()?.url !== lastPasswordUrl) {
+    lastPasswordTab = next.activeTabId
+    lastPasswordUrl = activeTab()?.url ?? ''
+    void refreshPasswordKey()
+    void refreshFx()
+  }
   if (downloadsOpen || shieldOpen) syncPanels()
 }
 
@@ -1431,7 +1599,15 @@ function syncPanels(): void {
   const showDownloads = downloadsOpen && !showDropdown && !showPalette
   const showShield = shieldOpen && !showDropdown && !showDownloads && !showPalette
   const showShot = shotOpen && !showDropdown && !showPalette
-  const showBookmarks = bookmarksOpen && !showDropdown && !showPalette
+  const showBookmarks = bmEditOpen && !showDropdown && !showPalette
+  const showBarFolder = barFolder !== null && !showDropdown && !showPalette
+  const showIp = ipOpen && !showDropdown && !showPalette
+  const showMood = moodOpen && !showDropdown && !showPalette
+  const showSite = siteOpen && !showDropdown && !showPalette
+  const showPw = pwOpen && !showDropdown && !showPalette
+  const showFx = fxOpen && !showDropdown && !showPalette
+  // A site's question stays up until it is answered, whatever else opens.
+  const showPerm = permQueue.length > 0 && !showPalette && !showDropdown
   const showMedia = mediaOpen && !showDropdown && !showPalette
   const showQr = qrOpen && !showDropdown && !showPalette
   const showGroup = openGroupId !== null && !showPalette
@@ -1441,12 +1617,29 @@ function syncPanels(): void {
   // throw away the search Chromium is still holding on the page.
   findBar.hidden = !findOpen
 
+  // The empty tab strip is the window's title bar, and a press on a title bar
+  // never reaches the page — so a popover could not be dismissed there. While
+  // one is open the strip stops dragging the window, and the first press on it
+  // closes the popover like a press anywhere else.
+  const anyOpen =
+    showDropdown || showDownloads || showShield || showShot || showBookmarks ||
+    showMedia || showQr || showGroup || showBarFolder || showIp || showMood || showSite || showPerm || showPw || showFx
+  document.documentElement.classList.toggle('popover-open', anyOpen)
+
   palette.hidden = !showPalette
   dropdown.hidden = !showDropdown
   downloadsPanel.hidden = !showDownloads
   shieldPanel.hidden = !showShield
   shotPanel.hidden = !showShot
-  bookmarksPanel.hidden = !showBookmarks
+  bmEditPanel.hidden = !showBookmarks
+  barFolderPanel.hidden = !showBarFolder
+  el('ip-panel').hidden = !showIp
+  el('mood-panel').hidden = !showMood
+  el('site-panel').hidden = !showSite
+  el('pw-panel').hidden = !showPw
+  el('fx-panel').hidden = !showFx
+  el('perm-panel').hidden = !showPerm
+  if (!showIp) maskIp()
   mediaPanel.hidden = !showMedia
   qrPanel.hidden = !showQr
   groupPanel.hidden = !showGroup
@@ -1470,8 +1663,27 @@ function syncPanels(): void {
     place(shotPanel, el('screenshot'), 340, 'right')
     visible = shotPanel
   } else if (showBookmarks) {
-    place(bookmarksPanel, el('bookmarks'), 340, 'right')
-    visible = bookmarksPanel
+    place(bmEditPanel, bookmarkBtn, 340, 'right')
+    visible = bmEditPanel
+  } else if (showFx) {
+    place(el('fx-panel'), el('fx'), 330, 'right')
+    visible = el('fx-panel')
+  } else if (showPw) {
+    place(el('pw-panel'), el('pw-key').hidden ? bookmarkBtn : el('pw-key'), 340, 'right')
+    visible = el('pw-panel')
+  } else if (showSite) {
+    place(el('site-panel'), sitePermsBtn, 280, 'left')
+    visible = el('site-panel')
+  } else if (showIp) {
+    place(el('ip-panel'), el('ip'), 300, 'right')
+    visible = el('ip-panel')
+  } else if (showMood) {
+    place(el('mood-panel'), el('mood'), 470, 'right')
+    visible = el('mood-panel')
+  } else if (showBarFolder && barFolder !== null) {
+    const anchor = barEl.querySelector<HTMLElement>(`[data-folder="${CSS.escape(barFolder)}"]`)
+    place(barFolderPanel, anchor ?? barEl, 300, 'left')
+    visible = barFolderPanel
   } else if (showMedia) {
     place(mediaPanel, el('media'), 320, 'right')
     visible = mediaPanel
@@ -1491,9 +1703,16 @@ function syncPanels(): void {
 
   // 78px of offset for the panel top, plus a little breathing room below it.
   const groupHeight = showGroup ? groupPanel.offsetHeight + 52 : 0
-  const panelHeight = visible ? visible.offsetHeight + 86 : 0
+  let panelHeight = visible ? visible.offsetHeight + 86 : 0
+  if (visible === dropdown) {
+    panelHeight = Math.max(panelHeight, dropdownFloor)
+    dropdownFloor = panelHeight
+  }
   const findHeight = findOpen ? findBar.offsetHeight + 86 : 0
-  window.browser.setDropdownHeight(Math.max(panelHeight, groupHeight, findHeight))
+  const tipHeight = tipFor ? el('tip').offsetHeight + 86 : 0
+  if (showPerm) place(el('perm-panel'), omniboxWrap, 360, 'left')
+  const permHeight = showPerm ? el('perm-panel').offsetHeight + 86 : 0
+  window.browser.setDropdownHeight(Math.max(panelHeight, groupHeight, findHeight, tipHeight, permHeight))
 }
 
 function countCard(n: number, label: string): HTMLElement {
@@ -1665,13 +1884,21 @@ function size(bytes: number): string {
 
 function closeDropdown(): void {
   suggestions = []
+  engineExtras = []
   selected = -1
+  dropdownFloor = 0
   renderSuggestions()
 }
 
 function closePanels(): void {
   qrOpen = false
-  bookmarksOpen = false
+  bmEditOpen = false
+  barFolder = null
+  ipOpen = false
+  moodOpen = false
+  siteOpen = false
+  pwOpen = false
+  fxOpen = false
   stopMediaPolling()
   mediaOpen = false
   downloadsOpen = false
@@ -1700,32 +1927,52 @@ function requestSuggestions(): void {
     const results = await window.browser.suggest(query)
     // A newer keystroke may have landed while we were waiting.
     if (omnibox.value !== query || document.activeElement !== omnibox) return
-    suggestions = results
-    selected = results.length > 0 ? 0 : -1
+
+    // Engine phrases from the previous keystroke that still extend what is
+    // typed stay put until the engine answers for this one.
+    const typed = query.trim().toLowerCase()
+    engineExtras = engineExtras.filter((item) => item.title.toLowerCase().startsWith(typed))
+
+    suggestions = withExtras(results, engineExtras)
+    selected = suggestions.length > 0 ? 0 : -1
+    if (suggestions.length === 0) dropdownFloor = 0
     renderSuggestions()
   }, 80)
 }
 
 /**
+ * Engine autocomplete goes above the page-text matches — those are the slow,
+ * considered answers — and after everything else.
+ */
+function withExtras(list: Suggestion[], extras: Suggestion[]): Suggestion[] {
+  const known = new Set(list.map((item) => item.url))
+  const fresh = extras.filter((item) => !known.has(item.url))
+  if (list.length === 0 || fresh.length === 0) return list
+
+  const at = list.findIndex((item) => item.kind === 'fulltext')
+  const cut = at === -1 ? list.length : at
+  return [...list.slice(0, cut), ...fresh, ...list.slice(cut)]
+}
+
+/**
  * Engine autocomplete arrives on its own schedule, after the local results are
- * already on screen. It goes above the page-text matches — those are the slow,
- * considered answers — and never disturbs a selection the user has moved.
+ * already on screen. It replaces the phrases carried over from the last
+ * keystroke and never disturbs a selection the user has moved.
  */
 window.browser.onExtraSuggestions(({ query, items }) => {
   if (omnibox.value !== query || document.activeElement !== omnibox) return
   if (suggestions.length === 0) return
 
-  const known = new Set(suggestions.map((item) => item.url))
-  const fresh = items.filter((item) => !known.has(item.url))
-  if (fresh.length === 0) return
-
   const chosen = selected >= 0 ? suggestions[selected]?.url : undefined
-  const at = suggestions.findIndex((item) => item.kind === 'fulltext')
-  const cut = at === -1 ? suggestions.length : at
+  const carried = new Set(engineExtras)
 
-  suggestions = [...suggestions.slice(0, cut), ...fresh, ...suggestions.slice(cut)]
+  engineExtras = items
+  suggestions = withExtras(
+    suggestions.filter((item) => !carried.has(item)),
+    items
+  )
 
-  // Keep the highlight on whatever it was on, now that the list has grown.
+  // Keep the highlight on whatever it was on, now that the list has changed.
   const moved = suggestions.findIndex((item) => item.url === chosen)
   selected = moved === -1 ? (suggestions.length > 0 ? 0 : -1) : moved
 
@@ -1733,6 +1980,8 @@ window.browser.onExtraSuggestions(({ query, items }) => {
 })
 
 function go(input: string): void {
+  lastTypedAt = 0
+  omniboxDirty = false
   window.browser.navigate(input)
   closeDropdown()
   omnibox.blur()
@@ -1753,7 +2002,6 @@ reloadBtn.addEventListener('click', () => {
   if (activeTab()?.loading) window.browser.stop()
   else window.browser.reload()
 })
-bookmarkBtn.addEventListener('click', () => window.browser.toggleBookmark())
 
 installBtn.addEventListener('click', async () => {
   const result = await window.browser.installApp()
@@ -1840,64 +2088,6 @@ function reportPip(result: string): void {
   button.classList.add('warn')
   window.setTimeout(() => button.classList.remove('warn'), 1800)
   toast(result === 'no-video' ? msg('toolbar.pipNoVideo') : msg('toolbar.pipUnavailable'))
-}
-
-/** The most recent saves, for getting back somewhere quickly. */
-async function showBookmarks(): Promise<void> {
-  const saved = await window.browser.listBookmarks()
-  bmList.replaceChildren()
-
-  if (saved.length === 0) {
-    const empty = document.createElement('div')
-    empty.id = 'bm-empty'
-    empty.textContent = msg('panel.noBookmarks')
-    bmList.append(empty)
-  }
-
-  // Grouped the way they were filed, so an imported tree is recognisable.
-  const folders = new Map<string, typeof saved>()
-  for (const entry of saved.slice(0, 14)) {
-    const folder = entry.folder?.trim() || ''
-    folders.set(folder, [...(folders.get(folder) ?? []), entry])
-  }
-
-  for (const [folder, entries] of [...folders].sort(([a], [b]) => a.localeCompare(b))) {
-    if (folder && folders.size > 1) {
-      const heading = document.createElement('div')
-      heading.className = 'bm-folder'
-      // Only the last part: the full path is too long for a panel this wide.
-      heading.textContent = folder.split('/').pop() ?? folder
-      bmList.append(heading)
-    }
-
-    for (const entry of entries) {
-      const item = document.createElement('button')
-      item.className = 'bm-item'
-      // One line, like every bookmark list: the address is worth a tooltip, not
-      // a second row of small grey text under every entry.
-      item.title = entry.url
-      item.append(icon('globe'))
-
-      const title = document.createElement('span')
-      title.className = 't'
-      title.textContent = entry.title || entry.url
-      item.append(title)
-
-      item.addEventListener('click', () => {
-        window.browser.navigate(entry.url)
-        bookmarksOpen = false
-        syncPanels()
-      })
-
-      bmList.append(item)
-    }
-  }
-
-  bookmarksOpen = true
-  downloadsOpen = false
-  shieldOpen = false
-  shotOpen = false
-  syncPanels()
 }
 
 /** Seconds as m:ss, the way a player shows them. */
@@ -2023,7 +2213,7 @@ function showQr(): void {
 
   qrOpen = true
   mediaOpen = false
-  bookmarksOpen = false
+  bmEditOpen = false
   downloadsOpen = false
   shieldOpen = false
   shotOpen = false
@@ -2064,7 +2254,7 @@ el("media").addEventListener("click", async () => {
   }
 
   mediaOpen = true
-  bookmarksOpen = false
+  bmEditOpen = false
   downloadsOpen = false
   shieldOpen = false
   shotOpen = false
@@ -2085,20 +2275,330 @@ for (const [id, action] of [
   })
 }
 
-el('bookmarks').addEventListener('click', () => {
-  if (bookmarksOpen) {
-    bookmarksOpen = false
-    syncPanels()
+// --- bookmarks: the star's editor and the bar under the toolbar -------------
+
+const bmTitleInput = el<HTMLInputElement>('bm-edit-title')
+const bmFolderSelect = el<HTMLSelectElement>('bm-edit-folder')
+const bmNewFolderRow = el('bm-new-folder-row')
+const bmNewFolderInput = el<HTMLInputElement>('bm-new-folder')
+
+/** The folder select's "make a new one" entry, which no real path can equal. */
+const NEW_FOLDER = '\u0000new'
+
+/** Everything saved, as last fetched, for the bar and its folders. */
+let allBookmarks: BookmarkEntry[] = []
+let allFolders: string[] = []
+
+/** The folder picked before "New folder…", which the new one goes inside. */
+let bmParentFolder = BOOKMARKS_BAR
+
+/** "Bookmarks bar/Dev" reads as "Bookmarks bar › Dev". */
+function folderLabel(path: string): string {
+  return path ? path.split('/').join(' › ') : 'Unfiled'
+}
+
+/** The page's own icon when history has one, the generic mark otherwise. */
+function bookmarkIcon(entry: BookmarkEntry): Element {
+  if (!entry.favicon) return icon('globe')
+  const image = document.createElement('img')
+  image.alt = ''
+  image.src = entry.favicon
+  image.addEventListener('error', () => image.replaceWith(icon('globe')))
+  return image
+}
+
+/** Plain click opens here; middle or Ctrl+click opens a new tab. */
+function openBookmark(url: string, event: MouseEvent): void {
+  if (event.button === 1 || event.ctrlKey || event.metaKey) window.browser.createTab(url)
+  else window.browser.navigate(url)
+}
+
+function fillFolderSelect(current: string): void {
+  bmFolderSelect.replaceChildren()
+
+  for (const path of allFolders) {
+    const depth = path.split('/').length - 1
+    const name = path.split('/').pop() ?? path
+    // Nested folders are indented under their parent, so the tree is visible.
+    bmFolderSelect.add(new Option(`${' '.repeat(depth)}${name}`, path, false, path === current))
+  }
+  bmFolderSelect.add(new Option('Unfiled', '', false, current === ''))
+  bmFolderSelect.add(new Option('New folder…', NEW_FOLDER))
+}
+
+/**
+ * The star. Saves the page straight into the bookmarks bar if it is not saved
+ * yet, and opens the editor either way: it says where the page went, and lets
+ * the name and the folder be changed on the spot.
+ */
+async function openBookmarkEditor(): Promise<void> {
+  const result = await window.browser.editBookmark()
+  if (!result) {
+    toast('There is nothing on this page to bookmark.')
     return
   }
-  void showBookmarks()
+
+  const { entry, folders, created } = result
+  allFolders = folders
+  bmEditUrl = entry.url
+  bmParentFolder = entry.folder || BOOKMARKS_BAR
+
+  el('bm-edit-heading').textContent = created
+    ? `Saved to ${folderLabel(entry.folder)}`
+    : 'Edit bookmark'
+  bmTitleInput.value = entry.title
+  fillFolderSelect(entry.folder)
+  bmNewFolderRow.hidden = true
+  bmNewFolderInput.value = ''
+
+  closeToolsExcept('bookmark')
+  bmEditOpen = true
+  syncPanels()
+  bmTitleInput.focus()
+  bmTitleInput.select()
+}
+
+/** Where the editor says the page should go, or null while a new folder is unnamed. */
+function chosenFolder(): string | null {
+  if (bmFolderSelect.value !== NEW_FOLDER) return bmFolderSelect.value
+  const name = bmNewFolderInput.value.replace(/\//g, ' ').trim()
+  if (!name) return null
+  return bmParentFolder ? `${bmParentFolder}/${name}` : name
+}
+
+/** Edits are kept as they are made, so closing the editor never loses one. */
+async function saveBookmarkEdit(): Promise<string | null> {
+  if (!bmEditUrl) return null
+  const folder = chosenFolder()
+  if (folder === null) return null
+
+  await window.browser.saveBookmark(bmEditUrl, {
+    title: bmTitleInput.value.trim() || bmEditUrl,
+    folder
+  })
+  return folder
+}
+
+async function finishBookmarkEdit(): Promise<void> {
+  const folder = await saveBookmarkEdit()
+  if (bmFolderSelect.value === NEW_FOLDER && folder === null) {
+    bmNewFolderInput.focus()
+    return
+  }
+  bmEditOpen = false
+  syncPanels()
+  if (folder !== null) toast(`Saved to ${folderLabel(folder)}`)
+}
+
+bookmarkBtn.addEventListener('click', () => void openBookmarkEditor())
+window.browser.onEditBookmark(() => void openBookmarkEditor())
+
+bmTitleInput.addEventListener('change', () => void saveBookmarkEdit())
+bmNewFolderInput.addEventListener('change', () => void saveBookmarkEdit())
+
+bmFolderSelect.addEventListener('change', async () => {
+  const making = bmFolderSelect.value === NEW_FOLDER
+  bmNewFolderRow.hidden = !making
+  syncPanels()
+
+  if (making) {
+    bmNewFolderInput.placeholder = `Inside ${folderLabel(bmParentFolder)}`
+    bmNewFolderInput.focus()
+    return
+  }
+
+  bmParentFolder = bmFolderSelect.value
+  const folder = await saveBookmarkEdit()
+  if (folder !== null) el('bm-edit-heading').textContent = `Saved to ${folderLabel(folder)}`
 })
 
-el('bm-manage').addEventListener('click', () => {
-  bookmarksOpen = false
+for (const input of [bmTitleInput, bmNewFolderInput, bmFolderSelect]) {
+  input.addEventListener('keydown', (event) => {
+    const key = (event as KeyboardEvent).key
+    if (key === 'Enter') {
+      event.preventDefault()
+      void finishBookmarkEdit()
+    } else if (key === 'Escape') {
+      event.preventDefault()
+      bmEditOpen = false
+      syncPanels()
+    }
+  })
+}
+
+el('bm-edit-done').addEventListener('click', () => void finishBookmarkEdit())
+
+el('bm-edit-remove').addEventListener('click', async () => {
+  if (!bmEditUrl) return
+  await window.browser.removeBookmark(bmEditUrl)
+  bmEditUrl = ''
+  bmEditOpen = false
   syncPanels()
-  window.browser.createTab(BOOKMARKS_URL)
+  toast('Bookmark removed')
 })
+
+el('bm-edit-all').addEventListener('click', async () => {
+  await saveBookmarkEdit()
+  bmEditOpen = false
+  syncPanels()
+  if (!state.sidebarOpen) void window.browser.toggleSidebar()
+})
+
+/** What is filed directly in the bar, and the folders inside it. */
+function renderBookmarksBar(): void {
+  barEl.replaceChildren()
+
+  const prefix = `${BOOKMARKS_BAR}/`
+  const inBar = allBookmarks
+    .filter((entry) => entry.folder === BOOKMARKS_BAR)
+    .sort((a, b) => a.createdAt - b.createdAt)
+
+  const subfolders = [
+    ...new Set(
+      [...allFolders, ...allBookmarks.map((entry) => entry.folder)]
+        .filter((path) => path.startsWith(prefix))
+        .map((path) => path.slice(prefix.length).split('/')[0])
+    )
+  ].sort((a, b) => a.localeCompare(b))
+
+  // Folders first, the way every other browser's bar puts them.
+  for (const name of subfolders) {
+    const path = prefix + name
+    const button = document.createElement('button')
+    button.className = barFolder === path ? 'bar-item folder open' : 'bar-item folder'
+    button.dataset['folder'] = path
+    button.title = name
+    button.append(icon('folder'))
+    const label = document.createElement('span')
+    label.className = 't'
+    label.textContent = name
+    button.append(label)
+    button.addEventListener('click', () => toggleBarFolder(path))
+    barEl.append(button)
+  }
+
+  for (const entry of inBar) {
+    const button = document.createElement('button')
+    button.className = 'bar-item'
+    // Page-controlled text: set as text, never markup.
+    button.title = `${entry.title || entry.url}\n${entry.url}`
+    button.append(bookmarkIcon(entry))
+    const label = document.createElement('span')
+    label.className = 't'
+    label.textContent = entry.title || entry.url
+    button.append(label)
+    button.addEventListener('mouseup', (event) => {
+      if (event.button === 0 || event.button === 1) openBookmark(entry.url, event)
+    })
+    barEl.append(button)
+  }
+
+  if (inBar.length === 0 && subfolders.length === 0) {
+    const empty = document.createElement('span')
+    empty.className = 'bar-empty'
+    empty.textContent = 'Pages you save with the star appear here.'
+    barEl.append(empty)
+  }
+
+  const spacer = document.createElement('span')
+  spacer.className = 'bar-spacer'
+  barEl.append(spacer)
+
+  // Everything outside the bar — imports, other folders — is one click away too.
+  if (allBookmarks.some((entry) => entry.folder !== BOOKMARKS_BAR && !entry.folder.startsWith(prefix))) {
+    const others = document.createElement('button')
+    others.className = 'bar-item folder'
+    others.title = 'Every bookmark, in the sidebar'
+    others.append(icon('folder'))
+    const label = document.createElement('span')
+    label.className = 't'
+    label.textContent = 'All bookmarks'
+    others.append(label)
+    others.addEventListener('click', () => void window.browser.toggleSidebar())
+    barEl.append(others)
+  }
+}
+
+/** A wheel over the bar scrolls it sideways, since it only scrolls that way. */
+barEl.addEventListener(
+  'wheel',
+  (event) => {
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+    barEl.scrollLeft += event.deltaY
+    event.preventDefault()
+  },
+  { passive: false }
+)
+
+function toggleBarFolder(path: string): void {
+  barFolder = barFolder === path ? null : path
+  if (barFolder) renderBarFolder(barFolder)
+  renderBookmarksBar()
+  syncPanels()
+}
+
+/** A bar folder's contents, subfolders under their own headings. */
+function renderBarFolder(path: string): void {
+  barFolderPanel.replaceChildren()
+
+  const inside = allBookmarks.filter(
+    (entry) => entry.folder === path || entry.folder.startsWith(`${path}/`)
+  )
+
+  if (inside.length === 0) {
+    const empty = document.createElement('div')
+    empty.id = 'bm-empty'
+    empty.textContent = 'Nothing in this folder yet.'
+    barFolderPanel.append(empty)
+    return
+  }
+
+  const byFolder = new Map<string, BookmarkEntry[]>()
+  for (const entry of inside) byFolder.set(entry.folder, [...(byFolder.get(entry.folder) ?? []), entry])
+
+  for (const [folder, entries] of [...byFolder].sort(([a], [b]) => a.localeCompare(b))) {
+    if (folder !== path) {
+      const heading = document.createElement('div')
+      heading.className = 'bm-folder'
+      heading.append(icon('folder'))
+      heading.append(document.createTextNode(folder.slice(path.length + 1).split('/').join(' › ')))
+      barFolderPanel.append(heading)
+    }
+
+    for (const entry of entries) {
+      const item = document.createElement('button')
+      item.className = 'bm-item'
+      item.title = entry.url
+      item.append(bookmarkIcon(entry))
+      const title = document.createElement('span')
+      title.className = 't'
+      title.textContent = entry.title || entry.url
+      item.append(title)
+      item.addEventListener('mouseup', (event) => {
+        if (event.button !== 0 && event.button !== 1) return
+        openBookmark(entry.url, event)
+        barFolder = null
+        renderBookmarksBar()
+        syncPanels()
+      })
+      barFolderPanel.append(item)
+    }
+  }
+}
+
+async function refreshBookmarks(): Promise<void> {
+  ;[allBookmarks, allFolders] = await Promise.all([
+    window.browser.listBookmarks(),
+    window.browser.bookmarkFolders()
+  ])
+  renderBookmarksBar()
+  if (barFolder) renderBarFolder(barFolder)
+}
+
+window.browser.onBookmarksChanged(() => void refreshBookmarks())
+void refreshBookmarks()
+
+el('bookmarks').addEventListener('click', () => void window.browser.toggleSidebar())
 
 el('split').addEventListener('click', () => window.browser.toggleSplit())
 
@@ -2109,9 +2609,13 @@ el('pip').addEventListener('click', async () => {
 window.browser.onPip(reportPip)
 el('settings').addEventListener('click', () => window.browser.createTab(SETTINGS_URL))
 
-omnibox.addEventListener('input', requestSuggestions)
+omnibox.addEventListener('input', () => {
+  lastTypedAt = Date.now()
+  omniboxDirty = true
+  requestSuggestions()
+})
 omnibox.addEventListener('focus', () => {
-  omnibox.select()
+  if (!typingRecently()) omnibox.select()
   requestSuggestions()
 })
 omnibox.addEventListener('blur', closeDropdown)
@@ -2130,7 +2634,16 @@ omnibox.addEventListener('keydown', (event) => {
       moveSelection(-1)
       break
     case 'Escape':
+      // First press dismisses the suggestions and keeps what was typed; the
+      // second gives the address back and leaves the field.
+      if (suggestions.length > 0) {
+        window.clearTimeout(suggestTimer)
+        closeDropdown()
+        break
+      }
       closePanels()
+      lastTypedAt = 0
+      omniboxDirty = false
       omnibox.blur()
       renderToolbar()
       break
@@ -2292,14 +2805,21 @@ window.browser.onFindResult((result) => {
  */
 function focusOmnibox(): void {
   omnibox.focus()
-  omnibox.select()
+  // A page that grabs focus while it loads sends the caret back here mid-word;
+  // selecting then would let the next key wipe out everything typed so far.
+  if (!typingRecently()) omnibox.select()
 
   window.setTimeout(() => {
     if (document.activeElement !== omnibox) {
       omnibox.focus()
-      omnibox.select()
+      if (!typingRecently()) omnibox.select()
     }
   }, 120)
+}
+
+/** Typed into within the last few seconds — longer than a new tab's load. */
+function typingRecently(): boolean {
+  return Date.now() - lastTypedAt < 3000
 }
 
 // Anywhere outside the panel and its chip dismisses it, like the other popovers.
@@ -2319,18 +2839,1024 @@ window.addEventListener('resize', () => {
   syncPanels()
 })
 
-// Any click outside a panel or its own button dismisses whatever is open.
+/** Each toolbar tool's popover, keyed by the id of the button that opens it. */
+const TOOL_PANELS: Record<string, string> = {
+  downloads: 'downloads-panel',
+  shield: 'shield-panel',
+  screenshot: 'shot-panel',
+  bookmark: 'bm-edit-panel',
+  media: 'media-panel',
+  qr: 'qr-panel',
+  ip: 'ip-panel',
+  mood: 'mood-panel',
+  'site-perms': 'site-panel',
+  'pw-key': 'pw-panel',
+  fx: 'fx-panel'
+}
+
+/** Close every tool popover except the one belonging to `keep`, if given. */
+function closeToolsExcept(keep: string | null): void {
+  if (keep !== 'downloads') downloadsOpen = false
+  if (keep !== 'shield') shieldOpen = false
+  if (keep !== 'screenshot') shotOpen = false
+  if (keep !== 'bookmark') bmEditOpen = false
+  if (keep !== 'bar-folder' && barFolder !== null) {
+    barFolder = null
+    renderBookmarksBar()
+  }
+  if (keep !== 'qr') qrOpen = false
+  if (keep !== 'ip') ipOpen = false
+  if (keep !== 'site-perms') siteOpen = false
+  if (keep !== 'pw-key') pwOpen = false
+  if (keep !== 'fx') fxOpen = false
+  if (keep !== 'mood') moodOpen = false
+  if (keep !== 'media' && mediaOpen) {
+    mediaOpen = false
+    stopMediaPolling()
+  }
+  syncPanels()
+}
+
+// One popover at a time. A click inside the open one leaves it alone; on its
+// own button, that button's handler toggles it; anywhere else — another tool,
+// the omnibox, an empty stretch of toolbar — closes it.
 document.addEventListener('mousedown', (event) => {
   const target = event.target as HTMLElement
-  if (target.closest('#dropdown, #downloads-panel, #shield-panel')) return
-  if (target.closest('#downloads, #shield, #omnibox-wrap')) return
-  if (!downloadsOpen && !shieldOpen && suggestions.length === 0) return
+  const panels = Object.values(TOOL_PANELS).map((id) => `#${id}`).join(', ')
+  if (target.closest(`#dropdown, #bar-folder-panel, ${panels}`)) return
+
+  // A bar folder's own button toggles its list in its click handler.
+  if (target.closest('.bar-item.folder[data-folder]')) {
+    closeToolsExcept('bar-folder')
+    return
+  }
+
+  const button = target.closest(Object.keys(TOOL_PANELS).map((id) => `#${id}`).join(', '))
+  if (button) {
+    closeToolsExcept(button.id)
+    return
+  }
+
+  if (target.closest('#omnibox-wrap')) {
+    closeToolsExcept(null)
+    return
+  }
 
   closePanels()
 })
 
 // Focus moving into the page (a click on the web content) closes them too.
 window.addEventListener('blur', () => closePanels())
+
+// --- site permissions --------------------------------------------------------
+
+const PERMISSION_TEXT: Record<PermissionKind, { label: string; asks: string; icon: string }> = {
+  camera: { label: 'Camera', asks: 'use your camera', icon: 'camera' },
+  microphone: { label: 'Microphone', asks: 'use your microphone', icon: 'mic' },
+  location: { label: 'Location', asks: 'know your location', icon: 'pin' },
+  notifications: { label: 'Notifications', asks: 'show notifications', icon: 'bell' },
+  clipboard: { label: 'Clipboard', asks: 'see what you copied', icon: 'copy' }
+}
+
+
+function hostOf(origin: string): string {
+  try {
+    return new URL(origin).host
+  } catch {
+    return origin
+  }
+}
+
+function renderPermPrompt(): void {
+  const request = permQueue[0]
+  if (!request) return
+
+  const icons = el('perm-icons')
+  icons.replaceChildren(...request.kinds.map((kind) => icon(PERMISSION_TEXT[kind].icon)))
+
+  const asks = request.kinds.map((kind) => PERMISSION_TEXT[kind].asks)
+  const joined = asks.length > 1 ? `${asks.slice(0, -1).join(', ')} and ${asks[asks.length - 1]}` : asks[0]
+  // The host is the page's, so it goes in as text.
+  el('perm-text').textContent = `${hostOf(request.origin)} wants to ${joined}`
+
+  el('perm-remember-row').hidden = request.amnesia
+  el('perm-amnesia').hidden = !request.amnesia
+  el<HTMLInputElement>('perm-remember').checked = true
+}
+
+window.browser.onPermissionRequest((request) => {
+  permQueue = [...permQueue, request]
+  renderPermPrompt()
+  syncPanels()
+})
+void window.browser.pendingPermissions().then((requests) => {
+  permQueue = [...requests]
+  renderPermPrompt()
+  syncPanels()
+})
+
+async function answerPermission(allow: boolean): Promise<void> {
+  const request = permQueue[0]
+  if (!request) return
+  permQueue = permQueue.slice(1)
+  await window.browser.answerPermission(
+    request.id,
+    allow,
+    request.amnesia || el<HTMLInputElement>('perm-remember').checked
+  )
+  renderPermPrompt()
+  syncPanels()
+  void refreshSitePermissions(true)
+}
+
+el('perm-allow').addEventListener('click', () => void answerPermission(true))
+el('perm-block').addEventListener('click', () => void answerPermission(false))
+
+// --- the lock in the address bar ---
+
+const sitePermsBtn = el<HTMLButtonElement>('site-perms')
+let siteOrigin = ''
+let siteDecisions: SitePermission[] = []
+
+function activeOrigin(): string {
+  try {
+    const url = new URL(activeTab()?.url ?? '')
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : ''
+  } catch {
+    return ''
+  }
+}
+
+/** Fetch the active site's decisions when the site changes, or when asked to. */
+async function refreshSitePermissions(force = false): Promise<void> {
+  const origin = activeOrigin()
+  if (!force && origin === siteOrigin) return
+  siteOrigin = origin
+  siteDecisions = origin ? await window.browser.sitePermissions(origin) : []
+  if (origin !== siteOrigin) return
+
+  sitePermsBtn.hidden = !origin
+  // Lit while the site holds something it was allowed, so it is visible at a glance.
+  sitePermsBtn.classList.toggle('granted', siteDecisions.some((decision) => decision.allow))
+  sitePermsBtn.title = siteDecisions.some((decision) => decision.allow)
+    ? `${hostOf(origin)} may use: ${siteDecisions
+        .filter((decision) => decision.allow)
+        .map((decision) => PERMISSION_TEXT[decision.permission as PermissionKind]?.label ?? decision.permission)
+        .join(', ')}`
+    : 'What this site may use'
+  if (siteOpen) renderSitePanel()
+}
+
+function renderSitePanel(): void {
+  el('site-origin').textContent = hostOf(siteOrigin)
+  const list = el('site-list')
+  list.replaceChildren()
+
+  for (const kind of Object.keys(PERMISSION_TEXT) as PermissionKind[]) {
+    const decision = siteDecisions.find((entry) => entry.permission === kind)
+    const row = document.createElement('label')
+    row.className = 'site-row'
+    row.append(icon(PERMISSION_TEXT[kind].icon))
+
+    const name = document.createElement('span')
+    name.textContent = PERMISSION_TEXT[kind].label
+    row.append(name)
+
+    const choice = document.createElement('select')
+    choice.add(new Option('Ask', 'ask', false, !decision))
+    choice.add(new Option('Allow', 'allow', false, decision?.allow === true))
+    choice.add(new Option('Block', 'block', false, decision?.allow === false))
+    choice.addEventListener('change', async () => {
+      const allow = choice.value === 'ask' ? null : choice.value === 'allow'
+      await window.browser.setSitePermission(siteOrigin, kind, allow)
+      await refreshSitePermissions(true)
+      toast(allow === null ? 'It will ask again next time' : 'Saved — reload the page if it is already open')
+    })
+    row.append(choice)
+    list.append(row)
+  }
+}
+
+sitePermsBtn.addEventListener('click', async () => {
+  if (siteOpen) {
+    siteOpen = false
+    syncPanels()
+    return
+  }
+  closeToolsExcept('site-perms')
+  await refreshSitePermissions(true)
+  siteOpen = true
+  renderSitePanel()
+  syncPanels()
+})
+
+// --- passwords ---------------------------------------------------------------
+
+const pwKey = el<HTMLButtonElement>('pw-key')
+const pwMaster = el<HTMLInputElement>('pw-master')
+const pwMasterAgain = el<HTMLInputElement>('pw-master-again')
+
+/** What the panel is doing: offering to keep a login, or filling one in. */
+let pwMode: 'offer' | 'fill' = 'fill'
+let pwOffer: PasswordOffer | null = null
+let pwPage: PasswordsForPage | null = null
+
+function pwHost(origin: string): string {
+  try {
+    return new URL(origin).host
+  } catch {
+    return origin
+  }
+}
+
+/** The key in the address bar: there when this site has logins saved. */
+async function refreshPasswordKey(): Promise<void> {
+  pwPage = await window.browser.passwordsForPage()
+  const has = (pwPage?.count ?? 0) > 0
+  pwKey.hidden = !has
+  pwKey.classList.toggle('ready', has && Boolean(pwPage?.hasForm))
+  pwKey.title = has
+    ? `${pwPage?.count} saved login${pwPage?.count === 1 ? '' : 's'} for ${pwHost(pwPage?.origin ?? '')}`
+    : ''
+  if (pwOpen && pwMode === 'fill') renderPasswordPanel()
+}
+
+function showMasterRow(vault: 'missing' | 'locked' | 'unlocked'): void {
+  const row = el('pw-master-row')
+  row.hidden = vault === 'unlocked'
+  pwMasterAgain.hidden = vault !== 'missing'
+  el('pw-master-hint').textContent =
+    vault === 'missing'
+      ? 'Choose a master password. It locks every saved password and cannot be recovered. At least 8 characters.'
+      : 'Unlock with your master password.'
+  el('pw-error').textContent = ''
+}
+
+function renderPasswordPanel(): void {
+  const accounts = el('pw-accounts')
+  accounts.replaceChildren()
+  pwMaster.value = ''
+  pwMasterAgain.value = ''
+
+  if (pwMode === 'offer' && pwOffer) {
+    const host = pwHost(pwOffer.origin)
+    el('pw-title').textContent = pwOffer.update ? 'Update saved password?' : 'Save password?'
+    // The username came from the page, so it goes in as text.
+    el('pw-who').textContent = pwOffer.username ? `${pwOffer.username} on ${host}` : host
+    showMasterRow(pwOffer.vault)
+    el('pw-never').hidden = pwOffer.update
+    el('pw-manage').hidden = true
+    el('pw-later').hidden = false
+    el('pw-go').textContent = pwOffer.update ? 'Update' : 'Save'
+    return
+  }
+
+  const page = pwPage
+  el('pw-title').textContent = 'Saved logins'
+  el('pw-who').textContent = page ? pwHost(page.origin) : ''
+  el('pw-never').hidden = true
+  el('pw-manage').hidden = false
+  el('pw-later').hidden = true
+
+  if (!page || page.vault !== 'unlocked') {
+    showMasterRow(page?.vault === 'missing' ? 'missing' : 'locked')
+    el('pw-go').textContent = 'Unlock'
+    el('pw-go').hidden = page?.vault === 'missing'
+    return
+  }
+
+  el('pw-master-row').hidden = true
+  el('pw-go').hidden = true
+  for (const account of page.accounts) {
+    const item = document.createElement('button')
+    item.className = 'bm-item'
+    item.append(icon('key'))
+    const name = document.createElement('span')
+    name.className = 't'
+    name.textContent = account.username || '(no username)'
+    item.append(name)
+    item.addEventListener('click', async () => {
+      const filled = await window.browser.fillPassword(account.id)
+      pwOpen = false
+      syncPanels()
+      toast(filled ? 'Filled in' : 'This page has no login form to fill')
+    })
+    accounts.append(item)
+  }
+}
+
+function openPasswordPanel(mode: 'offer' | 'fill'): void {
+  pwMode = mode
+  closeToolsExcept('pw-key')
+  pwOpen = true
+  el('pw-go').hidden = false
+  renderPasswordPanel()
+  syncPanels()
+  if (!el('pw-master-row').hidden) pwMaster.focus()
+}
+
+window.browser.onPasswordOffer((offer) => {
+  pwOffer = offer
+  openPasswordPanel('offer')
+})
+window.browser.onPasswordsChanged(() => void refreshPasswordKey())
+
+pwKey.addEventListener('click', async () => {
+  if (pwOpen) {
+    pwOpen = false
+    syncPanels()
+    return
+  }
+  await refreshPasswordKey()
+  openPasswordPanel('fill')
+})
+
+async function passwordGo(): Promise<void> {
+  const master = pwMaster.value
+
+  if (pwMode === 'offer' && pwOffer) {
+    if (pwOffer.vault === 'missing' && master !== pwMasterAgain.value) {
+      el('pw-error').textContent = 'The two do not match.'
+      return
+    }
+    const result = await window.browser.answerPasswordOffer('save', master || undefined)
+    if (!result.ok) {
+      el('pw-error').textContent = result.error ?? ''
+      pwMaster.value = ''
+      return
+    }
+    pwOffer = null
+    pwOpen = false
+    syncPanels()
+    toast(result.updated ? 'Password updated' : 'Password saved')
+    void refreshPasswordKey()
+    return
+  }
+
+  const result = await window.browser.unlockPasswords(master)
+  if (!result.ok) {
+    el('pw-error').textContent = result.error ?? ''
+    pwMaster.value = ''
+    return
+  }
+  await refreshPasswordKey()
+  renderPasswordPanel()
+  syncPanels()
+}
+
+el('pw-go').addEventListener('click', () => void passwordGo())
+for (const input of [pwMaster, pwMasterAgain]) {
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') void passwordGo()
+    if (event.key === 'Escape') {
+      pwOpen = false
+      syncPanels()
+    }
+  })
+}
+
+el('pw-later').addEventListener('click', () => {
+  void window.browser.answerPasswordOffer('dismiss')
+  pwOffer = null
+  pwOpen = false
+  syncPanels()
+})
+
+el('pw-never').addEventListener('click', () => {
+  void window.browser.answerPasswordOffer('never')
+  pwOffer = null
+  pwOpen = false
+  syncPanels()
+  toast('IE2 will not offer to save passwords on this site')
+})
+
+el('pw-manage').addEventListener('click', () => {
+  pwOpen = false
+  syncPanels()
+  window.browser.createTab(PASSWORDS_URL)
+})
+
+el('passwords').addEventListener('click', () => window.browser.createTab(PASSWORDS_URL))
+
+// --- audio effects ---------------------------------------------------------
+
+let fxState: AudioFxState | null = null
+let fxSendTimer: number | undefined
+
+const fxInputs = {
+  speed: el<HTMLInputElement>('fx-speed'),
+  reverb: el<HTMLInputElement>('fx-reverb'),
+  room: el<HTMLInputElement>('fx-room'),
+  bass: el<HTMLInputElement>('fx-bass'),
+  pitch: el<HTMLInputElement>('fx-pitch'),
+  remember: el<HTMLInputElement>('fx-remember')
+}
+
+function roomLabel(room: number): string {
+  return room < 0.25 ? 'Small room' : room < 0.5 ? 'Room' : room < 0.75 ? 'Hall' : 'Cathedral'
+}
+
+function fxFromInputs(): AudioFx {
+  return {
+    speed: Number(fxInputs.speed.value),
+    reverb: Number(fxInputs.reverb.value),
+    room: Number(fxInputs.room.value),
+    bass: Number(fxInputs.bass.value),
+    keepPitch: fxInputs.pitch.checked
+  }
+}
+
+function renderFxValues(fx: AudioFx): void {
+  el('fx-speed-v').textContent = `${fx.speed.toFixed(2)}×`
+  el('fx-reverb-v').textContent = `${Math.round(fx.reverb * 100)}%`
+  el('fx-room-v').textContent = roomLabel(fx.room)
+  el('fx-bass-v').textContent = `${Math.round(fx.bass * 100)}%`
+}
+
+function renderFxPanel(): void {
+  const state = fxState
+  el('fx-site').textContent = state ? new URL(state.origin).host : ''
+  const fx = state?.fx ?? NEUTRAL_FX
+
+  fxInputs.speed.value = String(fx.speed)
+  fxInputs.reverb.value = String(fx.reverb)
+  fxInputs.room.value = String(fx.room)
+  fxInputs.bass.value = String(fx.bass)
+  fxInputs.pitch.checked = fx.keepPitch
+  fxInputs.remember.checked = Boolean(state?.remembered)
+  renderFxValues(fx)
+
+  const report = state?.report
+  el('fx-status').textContent = !report
+    ? ''
+    : !report.hasMedia
+      ? 'Nothing is playing here yet — the settings apply as soon as something does.'
+      : report.limited
+        ? 'This player is protected: speed works, but its sound cannot be given reverb or bass.'
+        : ''
+
+  // The built-in presets, then the ones saved here, each removable.
+  const row = el('fx-presets')
+  row.replaceChildren()
+  const custom = fxPresets
+  for (const preset of [...BUILT_IN_FX_PRESETS, ...custom]) {
+    const button = document.createElement('button')
+    button.className = 'fx-preset'
+    button.textContent = preset.name
+    const active =
+      Math.abs(preset.speed - fx.speed) < 0.005 &&
+      Math.abs(preset.reverb - fx.reverb) < 0.005 &&
+      Math.abs(preset.bass - fx.bass) < 0.005 &&
+      preset.keepPitch === fx.keepPitch
+    button.classList.toggle('on', active)
+    button.addEventListener('click', () => void sendFx(cleanFx(preset)))
+
+    if (custom.includes(preset)) {
+      const remove = document.createElement('span')
+      remove.className = 'fx-remove'
+      remove.title = 'Delete this preset'
+      remove.append(icon('close'))
+      remove.addEventListener('click', (event) => {
+        event.stopPropagation()
+        fxPresets = custom.filter((each) => each !== preset)
+        void window.browser.saveAudioPresets(fxPresets)
+        renderFxPanel()
+      })
+      button.append(remove)
+    }
+    row.append(button)
+  }
+}
+
+async function refreshFx(): Promise<void> {
+  fxState = await window.browser.audioFx()
+  el('fx').classList.toggle('on', Boolean(fxState && !isNeutral(fxState.fx)))
+  if (fxOpen) renderFxPanel()
+}
+
+async function sendFx(fx: AudioFx): Promise<void> {
+  const next = await window.browser.setAudioFx(fx, fxInputs.remember.checked)
+  if (next) fxState = next
+  el('fx').classList.toggle('on', Boolean(fxState && !isNeutral(fxState.fx)))
+  renderFxPanel()
+}
+
+// Sliders send as they move, a few times a second at most.
+for (const input of [fxInputs.speed, fxInputs.reverb, fxInputs.room, fxInputs.bass]) {
+  input.addEventListener('input', () => {
+    const fx = fxFromInputs()
+    renderFxValues(fx)
+    window.clearTimeout(fxSendTimer)
+    fxSendTimer = window.setTimeout(() => void sendFx(fx), 60)
+  })
+}
+for (const input of [fxInputs.pitch, fxInputs.remember]) {
+  input.addEventListener('change', () => void sendFx(fxFromInputs()))
+}
+
+// Double-click a value to put just that one back.
+for (const [id, key] of [
+  ['fx-speed-v', 'speed'],
+  ['fx-reverb-v', 'reverb'],
+  ['fx-room-v', 'room'],
+  ['fx-bass-v', 'bass']
+] as [string, keyof AudioFx][]) {
+  el(id).title = 'Double-click to reset'
+  el(id).addEventListener('dblclick', () => void sendFx({ ...fxFromInputs(), [key]: NEUTRAL_FX[key] }))
+}
+
+el('fx-reset').addEventListener('click', () => void sendFx({ ...NEUTRAL_FX }))
+
+el('fx-save').addEventListener('click', () => {
+  el('fx-name-row').hidden = false
+  el<HTMLInputElement>('fx-name').value = ''
+  syncPanels()
+  el('fx-name').focus()
+})
+
+function saveFxPreset(): void {
+  const name = el<HTMLInputElement>('fx-name').value.trim()
+  if (!name) return
+  fxPresets = [...fxPresets.filter((each) => each.name !== name), { name, ...fxFromInputs() }]
+  void window.browser.saveAudioPresets(fxPresets)
+  el('fx-name-row').hidden = true
+  renderFxPanel()
+  syncPanels()
+  toast(`Saved preset "${name}"`)
+}
+el('fx-name-save').addEventListener('click', saveFxPreset)
+el('fx-name').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') saveFxPreset()
+  if (event.key === 'Escape') {
+    el('fx-name-row').hidden = true
+    syncPanels()
+  }
+})
+
+el('fx').addEventListener('click', async () => {
+  if (fxOpen) {
+    fxOpen = false
+    syncPanels()
+    return
+  }
+  closeToolsExcept('fx')
+  await refreshFx()
+  fxOpen = true
+  el('fx-name-row').hidden = true
+  renderFxPanel()
+  syncPanels()
+})
+
+window.browser.onAudioFxChanged(() => void refreshFx())
+
+// --- Public IP -------------------------------------------------------------
+
+let ipFound: PublicIp | null = null
+
+/**
+ * Masked again every time the panel goes away, however it goes — so opening it
+ * with someone looking over a shoulder never shows the address by surprise.
+ */
+function maskIp(): void {
+  el('ip-reveal').classList.add('masked')
+  el('ip-hint').hidden = false
+}
+
+function renderIp(): void {
+  const v4 = el('ip-v4')
+  const v6 = el('ip-v6')
+  if (!ipFound) {
+    v4.textContent = 'Checking…'
+    v6.textContent = ''
+    el('ip-when').textContent = ''
+    return
+  }
+  v4.textContent = ipFound.v4 ?? (ipFound.failed ? 'Could not check — offline?' : 'None')
+  v6.textContent = ipFound.v6 ?? 'None'
+  el('ip-when').textContent = ipFound.failed
+    ? ''
+    : `Checked ${new Date(ipFound.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+}
+
+async function checkIp(): Promise<void> {
+  ipFound = null
+  renderIp()
+  syncPanels()
+  ipFound = await window.browser.publicIp()
+  renderIp()
+  syncPanels()
+}
+
+el('ip').addEventListener('click', () => {
+  if (ipOpen) {
+    ipOpen = false
+    syncPanels()
+    return
+  }
+  closeToolsExcept('ip')
+  ipOpen = true
+  maskIp()
+  void checkIp()
+})
+
+el('ip-reveal').addEventListener('click', () => {
+  const masked = el('ip-reveal').classList.toggle('masked')
+  el('ip-hint').hidden = !masked
+})
+
+el('ip-refresh').addEventListener('click', () => void checkIp())
+
+el('ip-copy').addEventListener('click', async () => {
+  const address = ipFound?.v4 ?? ipFound?.v6
+  if (!address) return
+  await navigator.clipboard.writeText(address)
+  toast('Address copied')
+})
+
+// --- Mood ------------------------------------------------------------------
+
+const moodMixer = el('mood-mixer')
+const moodMeters = new Map<string, HTMLElement>()
+let moodBuilt = false
+
+function renderMoodControls(): void {
+  const mood = getMood()
+  el('mood-play').textContent = mood.playing ? 'Stop' : 'Play'
+  el('mood-animate').setAttribute('aria-pressed', String(mood.animate))
+  el('mood').classList.toggle('on', mood.playing)
+  el<HTMLInputElement>('mood-master').value = String(mood.master)
+  el<HTMLInputElement>('mood-rate').value = String(mood.thunderRate)
+
+  for (const input of moodMixer.querySelectorAll<HTMLInputElement>('input[data-layer]')) {
+    input.value = String(mood.levels[input.dataset['layer'] ?? ''] ?? 0)
+  }
+
+  const ends = sleepEndsAt()
+  el('mood-timer-left').textContent =
+    mood.playing && ends ? `stops at ${new Date(ends).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''
+}
+
+/** One vertical slider per layer, with its live level shaded behind it. */
+async function buildMoodPanel(): Promise<void> {
+  if (moodBuilt) return
+  moodBuilt = true
+
+  const preset = el<HTMLSelectElement>('mood-preset')
+  preset.add(new Option('Presets…', ''))
+  for (const name of Object.keys(MOOD_PRESETS)) preset.add(new Option(name, name))
+  preset.addEventListener('change', () => {
+    if (!preset.value) return
+    setMoodPreset(preset.value)
+    preset.value = ''
+    renderMoodControls()
+  })
+
+  for (const layer of await moodLayers()) {
+    const channel = document.createElement('div')
+    channel.className = 'mood-ch'
+
+    const track = document.createElement('div')
+    track.className = 'mood-track'
+    const meter = document.createElement('div')
+    meter.className = 'mood-meter'
+    const input = document.createElement('input')
+    input.type = 'range'
+    input.min = '0'
+    input.max = '1'
+    input.step = '0.01'
+    input.dataset['layer'] = layer.id
+    input.setAttribute('aria-label', layer.name)
+    input.addEventListener('input', () => setMoodLevel(layer.id, Number(input.value)))
+    track.append(meter, input)
+
+    const name = document.createElement('div')
+    name.className = 'mood-name'
+    name.textContent = layer.name
+
+    channel.append(track, name)
+    moodMixer.append(channel)
+    moodMeters.set(layer.id, meter)
+  }
+
+  renderMoodControls()
+  syncPanels()
+}
+
+// The shaded level behind each slider follows Animate's drift while open.
+window.setInterval(() => {
+  if (!moodOpen) return
+  for (const [id, meter] of moodMeters) meter.style.height = `${liveLevel(id) * 100}%`
+}, 150)
+
+el('mood').addEventListener('click', () => {
+  if (moodOpen) {
+    moodOpen = false
+    syncPanels()
+    return
+  }
+  closeToolsExcept('mood')
+  moodOpen = true
+  syncPanels()
+  void buildMoodPanel().then(renderMoodControls)
+})
+
+el('mood-play').addEventListener('click', async () => {
+  if (getMood().playing) stopMood()
+  else await playMood()
+  renderMoodControls()
+})
+
+el('mood-animate').addEventListener('click', () => {
+  setMoodAnimate(!getMood().animate)
+  renderMoodControls()
+})
+
+el('mood-thunder').addEventListener('click', async () => {
+  await thunderNow()
+  renderMoodControls()
+})
+
+el<HTMLInputElement>('mood-master').addEventListener('input', (event) =>
+  setMoodMaster(Number((event.target as HTMLInputElement).value))
+)
+el<HTMLInputElement>('mood-rate').addEventListener('input', (event) =>
+  setThunderRate(Number((event.target as HTMLInputElement).value))
+)
+el<HTMLSelectElement>('mood-timer').addEventListener('change', (event) => {
+  setSleepTimer(Number((event.target as HTMLSelectElement).value), () => {
+    el<HTMLSelectElement>('mood-timer').value = '0'
+    renderMoodControls()
+  })
+  renderMoodControls()
+})
+
+// --- toolbar: what each tool is for, when it cannot be used, and its order --
+
+interface ToolInfo {
+  name: string
+  purpose: string
+  keys?: string
+}
+
+/** Shown when the pointer rests on a tool: what it is, and what it does. */
+const TOOL_INFO: Record<string, ToolInfo> = {
+  'copy-link': { name: 'Copy link', purpose: "Copies this page's address to the clipboard." },
+  screenshot: {
+    name: 'Screenshot',
+    purpose: 'Captures what is on screen and copies it, ready to paste or save.',
+    keys: 'Ctrl+Shift+S'
+  },
+  reader: { name: 'Reader mode', purpose: 'Strips the page down to just the article.' },
+  pip: {
+    name: 'Picture in picture',
+    purpose: "Floats this page's video above your other windows.",
+    keys: 'Ctrl+Shift+I'
+  },
+  split: { name: 'Split view', purpose: 'Shows this tab and the next one side by side.', keys: 'Ctrl+Shift+E' },
+  qr: { name: 'QR code', purpose: 'Shows this page as a code your phone camera can open.' },
+  media: { name: 'Now playing', purpose: 'Play, pause and skip whatever this tab is playing.' },
+  mood: { name: 'Mood', purpose: 'Rain, wind and thunder in the background, mixed the way you like.' },
+  fx: {
+    name: 'Audio effects',
+    purpose: 'Slowed, reverb, nightcore: change the speed, pitch, reverb and bass of what this tab plays.'
+  },
+  ip: { name: 'Public IP', purpose: 'The address websites see you coming from. Hidden until you reveal it.' },
+  passwords: { name: 'Passwords', purpose: 'Saved logins, locked behind your master password.' },
+  bookmarks: { name: 'Bookmarks', purpose: 'Opens every bookmark in a sidebar beside the page.' },
+  downloads: { name: 'Downloads', purpose: 'Files you downloaded, and the ones still coming.' },
+  shield: { name: 'Blocking', purpose: 'Ads and trackers stopped on this page, and a switch for this site.' },
+  compat: { name: 'Compatibility Mode', purpose: 'Reloads the page pretending to be Internet Explorer 6.' },
+  amnesia: { name: 'Amnesia tab', purpose: 'Opens a tab that writes nothing down.', keys: 'Ctrl+Shift+N' },
+  devtools: { name: 'DevTools', purpose: 'Chromium developer tools for this page.', keys: 'F12' },
+  settings: { name: 'Settings', purpose: 'Everything about how IE2 behaves and looks.' },
+  help: { name: 'Manual', purpose: 'What every button does, and what it writes down.' }
+}
+
+/** The tools after the address bar, which can be dragged into any order. */
+const REORDERABLE = Object.keys(TOOL_INFO)
+
+/** Why a tool cannot be used on this page right now, or null when it can. */
+function unavailableReason(id: string): string | null {
+  const tab = activeTab()
+  const url = tab?.url ?? ''
+  const blank = !url || url === 'about:blank'
+  const internal = blank || url.startsWith('ie2://')
+
+  switch (id) {
+    case 'copy-link':
+      return blank ? 'This tab has no address yet.' : null
+    case 'reader':
+      return internal ? 'Works on articles from the web, not on browser pages.' : null
+    case 'pip':
+      return internal ? 'Needs a web page with a video on it.' : null
+    case 'fx':
+      return internal ? 'Works on sound and video playing on websites.' : null
+    case 'qr':
+      return internal ? 'Browser pages cannot be opened on a phone.' : null
+    case 'split':
+      return state.splitTabId === null && state.tabs.length < 2 ? 'Open a second tab first.' : null
+    case 'compat':
+      return internal ? 'Only websites can be shown the old way.' : null
+    case 'screenshot':
+      return blank ? 'Nothing on screen to capture yet.' : null
+    default:
+      return null
+  }
+}
+
+/**
+ * Grey out what cannot be used on this page — still visible, so it is not
+ * mistaken for gone, and still answering a click with the reason. The native
+ * tooltip is replaced by the fuller one below, so its text moves to the
+ * accessible name.
+ */
+function applyToolStates(): void {
+  for (const id of REORDERABLE) {
+    const button = document.getElementById(id)
+    if (!button) continue
+
+    if (button.title) {
+      button.setAttribute('aria-label', button.title)
+      button.removeAttribute('title')
+    }
+
+    const reason = unavailableReason(id)
+    button.classList.toggle('unavailable', reason !== null)
+    button.setAttribute('aria-disabled', String(reason !== null))
+    button.dataset['reason'] = reason ?? ''
+  }
+  if (tipFor) showTip(tipFor)
+}
+
+// A greyed-out tool says why instead of doing nothing.
+el('toolbar').addEventListener(
+  'click',
+  (event) => {
+    const button = (event.target as HTMLElement).closest('button')
+    if (!button || button.getAttribute('aria-disabled') !== 'true') return
+    event.stopImmediatePropagation()
+    event.preventDefault()
+    toast(button.dataset['reason'] || 'Not available here')
+  },
+  true
+)
+
+// --- the tooltip ---
+
+const tip = el('tip')
+let tipTimer: number | undefined
+
+function showTip(button: HTMLElement): void {
+  const info = TOOL_INFO[button.id]
+  if (!info) return
+  tipFor = button
+
+  el('tip-name').textContent = info.keys ? `${info.name}  ·  ${info.keys}` : info.name
+  el('tip-purpose').textContent = info.purpose
+  const reason = button.dataset['reason'] ?? ''
+  el('tip-reason').textContent = reason ? `Not available here: ${reason}` : ''
+  el('tip-reason').hidden = !reason
+
+  tip.hidden = false
+  const box = button.getBoundingClientRect()
+  const room = document.documentElement.clientWidth
+  const width = Math.min(260, room - 16)
+  tip.style.width = `${width}px`
+  tip.style.left = `${Math.max(8, Math.min(room - width - 8, box.left + box.width / 2 - width / 2))}px`
+  syncPanels()
+}
+
+function hideTip(): void {
+  window.clearTimeout(tipTimer)
+  if (!tipFor) return
+  tipFor = null
+  tip.hidden = true
+  syncPanels()
+}
+
+for (const id of REORDERABLE) {
+  const button = document.getElementById(id)
+  if (!button) continue
+  button.addEventListener('mouseenter', () => {
+    window.clearTimeout(tipTimer)
+    // Moving along the toolbar with one tip already up switches straight away.
+    tipTimer = window.setTimeout(() => showTip(button), tipFor ? 0 : 450)
+  })
+  button.addEventListener('mouseleave', hideTip)
+  button.addEventListener('mousedown', hideTip)
+}
+
+// --- reordering ---
+
+function currentOrder(): string[] {
+  return [...el('toolbar').children].map((node) => node.id).filter((id) => REORDERABLE.includes(id))
+}
+
+/** Put the tools in the saved order. Tools the order does not mention go last. */
+function applyToolbarOrder(order: string[]): void {
+  const known = order.filter((id) => REORDERABLE.includes(id) && document.getElementById(id))
+  const wanted = [...known, ...currentOrder().filter((id) => !known.includes(id))]
+  if (wanted.join() === currentOrder().join()) return
+
+  const toolbar = el('toolbar')
+  for (const id of wanted) toolbar.append(el(id))
+}
+
+function saveToolbarOrder(): void {
+  void window.browser.setToolbarOrder(currentOrder())
+}
+
+/** Where the dragged tool belongs for a pointer at x: before the first tool whose middle is past it. */
+function dropBefore(dragged: HTMLElement, x: number): HTMLElement | null {
+  for (const id of currentOrder()) {
+    const other = el(id)
+    if (other === dragged || other.hidden) continue
+    const box = other.getBoundingClientRect()
+    if (x < box.left + box.width / 2) return other
+  }
+  return null
+}
+
+let suppressToolClick = false
+
+/**
+ * Press and hold a tool, then slide it along the toolbar. A plain click still
+ * just uses the tool: the hold is what tells the two apart.
+ */
+el('toolbar').addEventListener('mousedown', (start) => {
+  if (start.button !== 0) return
+  const button = (start.target as HTMLElement).closest('button')
+  if (!button || !REORDERABLE.includes(button.id)) return
+
+  let lifted = false
+  const timer = window.setTimeout(() => {
+    lifted = true
+    hideTip()
+    closePanels()
+    button.classList.add('lifted')
+    document.documentElement.classList.add('reordering')
+  }, 350)
+
+  const move = (event: MouseEvent): void => {
+    if (!lifted) {
+      if (Math.abs(event.clientX - start.clientX) > 4 || Math.abs(event.clientY - start.clientY) > 4) {
+        stop()
+      }
+      return
+    }
+
+    const before = dropBefore(button, event.clientX)
+    const last = el(currentOrder().slice(-1)[0])
+    if (before === button.nextElementSibling || (before === null && button === last)) return
+    if (before) before.before(button)
+    else last.after(button)
+  }
+
+  const stop = (): void => {
+    window.clearTimeout(timer)
+    document.removeEventListener('mousemove', move)
+    document.removeEventListener('mouseup', stop)
+    if (!lifted) return
+
+    button.classList.remove('lifted')
+    document.documentElement.classList.remove('reordering')
+    // The release lands as a click on the tool; it was a move, not a use.
+    suppressToolClick = true
+    window.setTimeout(() => (suppressToolClick = false), 0)
+    saveToolbarOrder()
+  }
+
+  document.addEventListener('mousemove', move)
+  document.addEventListener('mouseup', stop)
+})
+
+el('toolbar').addEventListener(
+  'click',
+  (event) => {
+    if (!suppressToolClick) return
+    event.stopImmediatePropagation()
+    event.preventDefault()
+  },
+  true
+)
+
+// The same without a mouse: Alt+Shift+Left or Right moves the focused tool.
+el('toolbar').addEventListener('keydown', (event) => {
+  if (!event.altKey || !event.shiftKey) return
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  const button = (event.target as HTMLElement).closest('button')
+  if (!button || !REORDERABLE.includes(button.id)) return
+
+  event.preventDefault()
+  const order = currentOrder().filter((id) => !el(id).hidden)
+  const at = order.indexOf(button.id)
+  const to = order[at + (event.key === 'ArrowLeft' ? -1 : 1)]
+  if (!to) return
+  if (event.key === 'ArrowLeft') el(to).before(button)
+  else el(to).after(button)
+  button.focus()
+  saveToolbarOrder()
+})
 
 drawIcons()
 applyStaticText()

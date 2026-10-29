@@ -6,9 +6,15 @@ import type {
   ImportSource,
   ReaderArticle,
   RecallStats,
+  SitePermission,
+  VaultStatus,
+  Credential,
+  CredentialSummary,
   UpdateState
 } from '../shared/types'
 import type { Settings } from '../shared/settings'
+import { watchForLogins } from './passwords'
+import { watchAudio } from './audiofx'
 
 /**
  * Preload for tab views. It runs in every tab, including hostile pages, so it
@@ -17,6 +23,13 @@ import type { Settings } from '../shared/settings'
  * This check is a convenience, not the security boundary — the main process
  * independently verifies the sender's URL on every one of these channels.
  */
+// Websites get no API at all — only the password manager's form watcher,
+// which lives in this isolated world where the page cannot reach it.
+if (window.location.protocol === 'https:' || window.location.protocol === 'http:') {
+  watchForLogins()
+  watchAudio()
+}
+
 if (window.location.protocol === 'ie2:') {
   const api = {
     /** Chromium and Electron versions, for the About section. */
@@ -94,15 +107,62 @@ if (window.location.protocol === 'ie2:') {
     listBookmarks: (): Promise<BookmarkEntry[]> => ipcRenderer.invoke('internal:bookmarks'),
     removeBookmark: (url: string): Promise<void> =>
       ipcRenderer.invoke('internal:bookmark-remove', url),
+    updateBookmark: (url: string, changes: { title?: string; folder?: string }): Promise<void> =>
+      ipcRenderer.invoke('internal:bookmark-update', url, changes),
+    bookmarkFolders: (): Promise<string[]> => ipcRenderer.invoke('internal:bookmark-folders'),
+    createFolder: (path: string): Promise<string> => ipcRenderer.invoke('internal:folder-create', path),
+    renameFolder: (from: string, to: string): Promise<void> =>
+      ipcRenderer.invoke('internal:folder-rename', from, to),
+    deleteFolder: (path: string, withBookmarks: boolean): Promise<number> =>
+      ipcRenderer.invoke('internal:folder-delete', path, withBookmarks),
+    exportBookmarks: (): Promise<number | null> => ipcRenderer.invoke('internal:bookmarks-export'),
+    sitePermissions: (): Promise<SitePermission[]> => ipcRenderer.invoke('internal:permissions'),
+
+    /** The vault. The main process answers these for ie2://passwords only. */
+    vault: {
+      status: (): Promise<VaultStatus> => ipcRenderer.invoke('vault:status'),
+      create: (master: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('vault:create', master),
+      unlock: (master: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('vault:unlock', master),
+      lock: (): Promise<void> => ipcRenderer.invoke('vault:lock'),
+      list: (): Promise<CredentialSummary[]> => ipcRenderer.invoke('vault:list'),
+      reveal: (id: number): Promise<Credential | null> => ipcRenderer.invoke('vault:reveal', id),
+      save: (entry: {
+        id?: number
+        url: string
+        username: string
+        password: string
+        note?: string
+      }): Promise<number | null> => ipcRenderer.invoke('vault:save', entry),
+      remove: (id: number): Promise<void> => ipcRenderer.invoke('vault:delete', id),
+      generate: (): Promise<string> => ipcRenderer.invoke('vault:generate'),
+      change: (current: string, next: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('vault:change', current, next),
+      wipe: (): Promise<void> => ipcRenderer.invoke('vault:wipe'),
+      neverList: (): Promise<string[]> => ipcRenderer.invoke('vault:never-list'),
+      neverRemove: (origin: string): Promise<void> => ipcRenderer.invoke('vault:never-remove', origin),
+      exportCsv: (master: string): Promise<{ ok: boolean; error?: string }> =>
+        ipcRenderer.invoke('vault:export', master),
+      importCsv: (): Promise<{ added: number; updated: number; skipped: number } | null> =>
+        ipcRenderer.invoke('vault:import')
+    },
+    forgetPermission: (origin: string, permission: string): Promise<void> =>
+      ipcRenderer.invoke('internal:permission-forget', origin, permission),
+    closeSidebar: (): Promise<void> => ipcRenderer.invoke('internal:sidebar-close'),
+    onBookmarksChanged: (callback: () => void): void => {
+      ipcRenderer.on('ie2:bookmarks-changed', () => callback())
+    },
     pickImage: (): Promise<string | null> => ipcRenderer.invoke('internal:pick-image'),
     pickFolder: (): Promise<{ folder: string; count: number } | null> =>
       ipcRenderer.invoke('internal:pick-folder'),
     scanForImport: (): Promise<ImportSource[]> => ipcRenderer.invoke('internal:import-scan'),
     runImport: (
       id: string,
-      what: { bookmarks: boolean; history: boolean; searches: boolean }
-    ): Promise<ImportResult> => ipcRenderer.invoke('internal:import-run', id, what),
-    open: (url: string): Promise<void> => ipcRenderer.invoke('internal:open', url),
+      what: { bookmarks: boolean; history: boolean; searches: boolean; cookies?: boolean }
+    ): Promise<ImportResult | null> => ipcRenderer.invoke('internal:import-run', id, what),
+    open: (url: string, newTab?: boolean): Promise<void> =>
+      ipcRenderer.invoke('internal:open', url, newTab),
 
     listNeverRemember: (): Promise<string[]> => ipcRenderer.invoke('internal:never-list'),
     addNeverRemember: (domain: string): Promise<void> =>
@@ -159,14 +219,41 @@ export type InternalApi = {
   listsUpdatedAt: () => Promise<number>
   listBookmarks: () => Promise<BookmarkEntry[]>
   removeBookmark: (url: string) => Promise<void>
+  updateBookmark: (url: string, changes: { title?: string; folder?: string }) => Promise<void>
+  bookmarkFolders: () => Promise<string[]>
+  createFolder: (path: string) => Promise<string>
+  renameFolder: (from: string, to: string) => Promise<void>
+  deleteFolder: (path: string, withBookmarks: boolean) => Promise<number>
+  exportBookmarks: () => Promise<number | null>
+  sitePermissions: () => Promise<SitePermission[]>
+  vault: {
+    status: () => Promise<VaultStatus>
+    create: (master: string) => Promise<{ ok: boolean; error?: string }>
+    unlock: (master: string) => Promise<{ ok: boolean; error?: string }>
+    lock: () => Promise<void>
+    list: () => Promise<CredentialSummary[]>
+    reveal: (id: number) => Promise<Credential | null>
+    save: (entry: { id?: number; url: string; username: string; password: string; note?: string }) => Promise<number | null>
+    remove: (id: number) => Promise<void>
+    generate: () => Promise<string>
+    change: (current: string, next: string) => Promise<{ ok: boolean; error?: string }>
+    wipe: () => Promise<void>
+    neverList: () => Promise<string[]>
+    neverRemove: (origin: string) => Promise<void>
+    exportCsv: (master: string) => Promise<{ ok: boolean; error?: string }>
+    importCsv: () => Promise<{ added: number; updated: number; skipped: number } | null>
+  }
+  forgetPermission: (origin: string, permission: string) => Promise<void>
+  closeSidebar: () => Promise<void>
+  onBookmarksChanged: (callback: () => void) => void
   pickImage: () => Promise<string | null>
   pickFolder: () => Promise<{ folder: string; count: number } | null>
   scanForImport: () => Promise<ImportSource[]>
   runImport: (
     id: string,
-    what: { bookmarks: boolean; history: boolean; searches: boolean }
-  ) => Promise<ImportResult>
-  open: (url: string) => Promise<void>
+    what: { bookmarks: boolean; history: boolean; searches: boolean; cookies?: boolean }
+  ) => Promise<ImportResult | null>
+  open: (url: string, newTab?: boolean) => Promise<void>
   listNeverRemember: () => Promise<string[]>
   addNeverRemember: (domain: string) => Promise<void>
   removeNeverRemember: (domain: string) => Promise<void>

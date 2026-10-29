@@ -62,7 +62,8 @@ export default defineConfig({
           translate: resolve(__dirname, 'src/renderer/translate.html'),
           bookmarks: resolve(__dirname, 'src/renderer/bookmarks.html'),
           history: resolve(__dirname, 'src/renderer/history.html'),
-          reader: resolve(__dirname, 'src/renderer/reader.html')
+          reader: resolve(__dirname, 'src/renderer/reader.html'),
+          passwords: resolve(__dirname, 'src/renderer/passwords.html')
         }
       }
     }

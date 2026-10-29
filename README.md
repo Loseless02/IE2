@@ -157,8 +157,15 @@ scripts/
 - Internal `ie2://` pages get an API, and the main process verifies the sender's
   URL on every one of those channels — the preload check is convenience, not the
   boundary.
-- Camera, microphone and geolocation are denied for every site, with no prompt,
-  because the prompt UI does not exist yet.
+- Camera, microphone, location, notifications and clipboard reads are asked
+  for once per site; the answer is kept and can be changed from the lock in the
+  address bar. Anything else a page asks for is refused. Settings → Privacy can
+  refuse all of it without asking.
+- Saved passwords are sealed with a master password (scrypt, then AES-256-GCM
+  per login, username and note included). The key exists only in memory while
+  the vault is unlocked. The page-side form watcher runs in the preload's
+  isolated world, and which site a login belongs to is always taken from the
+  sending frame's address in the main process, never from the page.
 - All page-controlled strings are inserted with `textContent`, never `innerHTML`.
 
 ### What is stored, and where

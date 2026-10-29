@@ -14,7 +14,7 @@ import { icon } from './icons'
 import { confirmDialog, promptDialog } from './dialog'
 import { buildLabel } from '../shared/build'
 import { uiKey } from '../shared/i18n'
-import type { ImportSource, RecallStats, UpdateState } from '../shared/types'
+import type { ImportSource, RecallStats, SitePermission, UpdateState } from '../shared/types'
 
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
 
@@ -25,6 +25,7 @@ const filter = el<HTMLInputElement>('filter')
 let settings: Settings
 let stats: RecallStats
 let domains: string[] = []
+let permissions: SitePermission[] = []
 let sources: ImportSource[] = []
 let languages: { code: string; name: string; builtIn: boolean }[] = []
 
@@ -865,6 +866,18 @@ const SECTIONS: Section[] = [
         )
       ),
       group(
+        row(
+          'Show bookmarks bar',
+          'The row of bookmarks under the toolbar. The star saves pages into it.',
+          toggle('showBookmarksBar')
+        ),
+        row(
+          'Toolbar order',
+          'Press and hold a tool, then slide it along the toolbar to move it. Alt+Shift+Left/Right moves the focused one.',
+          actionButton('Reset to default', false, async () => {
+            settings = await window.ie2.setSetting('toolbarOrder', [])
+          })
+        ),
         row('Show home button', 'Goes to your home page.', toggle('showHomeButton')),
         row('Show copy-link button', "Copies the current page's address.", toggle('showCopyLinkButton')),
         row(
@@ -874,6 +887,18 @@ const SECTIONS: Section[] = [
         ),
         row('Show bookmarks button', 'Opens your saved pages.', toggle('showBookmarksButton')),
         row('Show QR button', "A QR code of the current page, to open it on a phone.", toggle('showQrButton')),
+        row('Show Mood button', 'Rain, wind and thunder sounds, mixed the way you like.', toggle('showMoodButton')),
+        row(
+          'Show Public IP button',
+          'The address websites see you coming from, for checking a VPN. Hidden until you click it.',
+          toggle('showIpButton')
+        ),
+        row('Show Passwords button', 'Opens your saved logins.', toggle('showPasswordsButton')),
+        row(
+          'Show Audio effects button',
+          'Slowed, reverb, nightcore and bass boost for whatever a tab is playing.',
+          toggle('showFxButton')
+        ),
         row(
           'Show media button',
           'What the current tab is playing, with play, pause and seek.',
@@ -986,8 +1011,8 @@ const SECTIONS: Section[] = [
     build: () => [
       group(
         row(
-          'Deny camera, microphone and location',
-          'Every site, no prompt. Turning this off does nothing yet — the prompt UI does not exist.',
+          'Refuse camera, microphone, location and notifications',
+          'Every site, without asking. Off, a site asks once and keeps your answer — change it with the lock in the address bar.',
           toggle('denyPermissions')
         ),
         row(
@@ -996,6 +1021,7 @@ const SECTIONS: Section[] = [
           toggle('clearCookiesOnForget')
         )
       ),
+      sitePermissionsGroup(),
       group(
         row(
           'Forget everything',
@@ -1179,13 +1205,49 @@ function importGroup(): HTMLElement {
     label.append(name)
 
     const what = document.createElement('span')
-    what.textContent = [
-      source.hasBookmarks ? 'bookmarks' : null,
-      source.hasHistory ? 'history and past searches' : null
-    ]
-      .filter(Boolean)
-      .join(', ')
+    what.textContent = 'Choose what to bring across:'
     label.append(what)
+
+    // One checkbox per kind of data, so importing bookmarks does not also
+    // drag in ten years of history.
+    const picks = document.createElement('div')
+    picks.className = 'import-picks'
+    const pick = (text: string, on: boolean, available: boolean, why = ''): HTMLInputElement => {
+      const item = document.createElement('label')
+      item.className = available ? 'pick' : 'pick unavailable'
+      const box = document.createElement('input')
+      box.type = 'checkbox'
+      box.checked = on && available
+      box.disabled = !available
+      item.append(box, document.createTextNode(t(text)))
+      if (why) item.title = why
+      picks.append(item)
+      return box
+    }
+
+    const wantBookmarks = pick('Bookmarks', true, source.hasBookmarks)
+    const wantHistory = pick('Browsing history', true, source.hasHistory)
+    const wantSearches = pick('Past searches', true, source.hasHistory && source.browser !== 'Firefox')
+    const wantCookies = pick(
+      'Cookies (stay signed in)',
+      false,
+      source.hasCookies,
+      source.hasCookies
+        ? 'Cookies carry your logins. Anyone using this IE2 profile is signed in wherever you were.'
+        : 'Chrome, Edge, Brave and other Chromium browsers lock their cookies so no other program can read them.'
+    )
+    label.append(picks)
+
+    if (source.hasCookies) {
+      const warn = document.createElement('span')
+      warn.className = 'import-warn'
+      warn.textContent = t(
+        'Cookies are as good as passwords: anyone using this profile is signed in wherever you were. Some sites may still ask you to sign in again.'
+      )
+      warn.hidden = true
+      wantCookies.addEventListener('change', () => (warn.hidden = !wantCookies.checked))
+      label.append(warn)
+    }
 
     node.append(label)
 
@@ -1197,20 +1259,34 @@ function importGroup(): HTMLElement {
     button.textContent = t('Import')
 
     button.addEventListener('click', async () => {
+      const choice = {
+        bookmarks: wantBookmarks.checked,
+        history: wantHistory.checked,
+        searches: wantSearches.checked,
+        cookies: wantCookies.checked
+      }
+      if (!Object.values(choice).some(Boolean)) {
+        what.textContent = t('Tick at least one thing to import.')
+        return
+      }
+
       button.disabled = true
       button.textContent = t('Importing…')
 
       try {
-        const result = await window.ie2.runImport(source.id, {
-          bookmarks: source.hasBookmarks,
-          history: source.hasHistory,
-          searches: source.hasHistory
-        })
+        const result = await window.ie2.runImport(source.id, choice)
+        if (!result) throw new Error('refused')
 
         what.textContent =
-          `Imported ${result.history} pages, ${result.bookmarks} bookmarks, ` +
-          `${result.searches} past searches` +
-          (result.skipped > 0 ? ` — ${result.skipped} entries skipped` : '')
+          [
+            choice.history ? `${result.history} pages` : '',
+            choice.bookmarks ? `${result.bookmarks} bookmarks` : '',
+            choice.searches ? `${result.searches} past searches` : '',
+            choice.cookies ? `${result.cookies} cookies` : ''
+          ]
+            .filter(Boolean)
+            .join(', ')
+            .replace(/^/, 'Imported ') + (result.skipped > 0 ? ` — ${result.skipped} entries skipped` : '')
         button.textContent = t('Imported')
 
         const fresh = await window.ie2.stats()
@@ -1256,6 +1332,55 @@ function statsGroup(): HTMLElement {
   }
 
   wrap.append(grid)
+  return wrap
+}
+
+const PERMISSION_LABELS: Record<string, string> = {
+  camera: 'Camera',
+  microphone: 'Microphone',
+  location: 'Location',
+  notifications: 'Notifications',
+  clipboard: 'Clipboard'
+}
+
+/** Every answer a site was given, each one removable so the site asks again. */
+function sitePermissionsGroup(): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'group'
+  wrap.append(
+    row(
+      'Site permissions',
+      'What sites were allowed or refused. Remove one and the site asks again next time.',
+      document.createElement('span')
+    )
+  )
+
+  const list = document.createElement('div')
+  list.className = permissions.length > 0 ? 'domains' : 'empty'
+  if (permissions.length === 0) {
+    list.textContent = t('No site has asked for anything yet.')
+  }
+  for (const entry of permissions) {
+    const chip = document.createElement('span')
+    chip.className = entry.allow ? 'chip' : 'chip refused'
+    chip.append(
+      document.createTextNode(
+        `${entry.origin.replace(/^https?:\/\//, '')} · ${PERMISSION_LABELS[entry.permission] ?? entry.permission} · ${
+          entry.allow ? 'allowed' : 'blocked'
+        }`
+      )
+    )
+    const remove = document.createElement('button')
+    remove.append(icon('close'))
+    remove.title = 'Forget this answer'
+    remove.addEventListener('click', async () => {
+      await window.ie2.forgetPermission(entry.origin, entry.permission)
+      await refresh()
+    })
+    chip.append(remove)
+    list.append(chip)
+  }
+  wrap.append(list)
   return wrap
 }
 
@@ -1438,11 +1563,12 @@ function applyVersion(): void {
 }
 
 async function refresh(): Promise<void> {
-  ;[settings, stats, domains, sources] = await Promise.all([
+  ;[settings, stats, domains, sources, permissions] = await Promise.all([
     window.ie2.getSettings(),
     window.ie2.stats(),
     window.ie2.listNeverRemember(),
-    window.ie2.scanForImport()
+    window.ie2.scanForImport(),
+    window.ie2.sitePermissions()
   ])
   languages = await window.ie2.languages()
   messages = await window.ie2.messages(settings.language)

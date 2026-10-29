@@ -4,6 +4,42 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.8.0
+
+- Passwords: IE2 offers to save a login when you sign in, offers to update it
+  when the password changes, and fills it next time. Everything is sealed with a
+  master password and locks itself after a few idle minutes. Manage, edit,
+  generate, import and export them at ie2://passwords
+- Bookmarks, rebuilt: the star saves straight into a new bookmarks bar under the
+  toolbar and says where, with a box to rename it or pick another folder. The
+  bookmarks button opens a sidebar beside the page — folders you can fold,
+  rename, nest and drag bookmarks between — and bookmarks can be exported
+- Sites can ask for the camera, microphone, location and notifications. Each
+  asks once; the lock in the address bar shows and changes what a site may use.
+  Fullscreen video works again
+- Mood: rain, wind, thunder and crickets, mixed with sliders, with presets,
+  slow drift and a sleep timer. Keeps playing with its panel closed
+- Audio effects: slowed + reverb, nightcore, or your own mix for whatever a tab
+  is playing — speed, reverb, room size, bass boost and keep-the-pitch, with
+  presets you can save and a switch to remember a site. Built in and free
+- Public IP: the address websites see, blurred until you click it, every time
+- Drag a tab onto another window's tab strip to move it there, exactly where
+  the marker shows — the page moves without reloading
+- Hover a toolbar tool to see what it does. Tools that cannot work on the page
+  in front are greyed out and say why. Press and hold a tool to slide it into a
+  different place on the toolbar
+- Importing from another browser lets you pick what comes across, and Firefox
+  cookies can come too, so you stay signed in
+- The new tab page is readable over any wallpaper
+- Fixed: an installed web app opened in the browser window instead of its own
+  whenever IE2 was already running
+- Fixed: closing a new tab with Ctrl+W left the address bar without the caret
+- Fixed: search suggestions flickered on every keystroke. Esc now closes them
+  and keeps what you typed
+- Fixed: tool popups stayed open until clicked again; any click elsewhere now
+  closes them
+- Fixed: the address bar could keep showing the previous page's address
+
 ## 0.4.1
 
 - Updating is one button: Check for updates downloads whatever it finds, then

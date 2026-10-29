@@ -1,3 +1,5 @@
+import type { AudioFxPreset } from './audiofx'
+
 /** Search engines the omnibox can hand a query to. */
 export const SEARCH_ENGINES = {
   duckduckgo: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
@@ -110,8 +112,21 @@ export interface Settings {
   showBookmarksButton: boolean
   showMediaButton: boolean
   showQrButton: boolean
+  showMoodButton: boolean
+  showIpButton: boolean
+  showPasswordsButton: boolean
+  showFxButton: boolean
+  /** Audio effects presets the user saved, after the built-in ones. */
+  audioPresets: AudioFxPreset[]
   showCompatButton: boolean
   showAmnesiaButton: boolean
+  /** The row of bookmarks under the toolbar, for getting to them in one click. */
+  showBookmarksBar: boolean
+  /**
+   * The order the user dragged the toolbar tools into, as button ids. Empty
+   * means the built-in order; ids missing from it keep their built-in place.
+   */
+  toolbarOrder: string[]
   animations: boolean
   stylePageScrollbars: boolean
 
@@ -178,6 +193,14 @@ export interface Settings {
   // Privacy
   clearCookiesOnForget: boolean
   denyPermissions: boolean
+
+  // Passwords
+  /** Ask to save a login when one is submitted. */
+  offerToSavePasswords: boolean
+  /** Fill a site's only saved login as soon as its form appears, while unlocked. */
+  autofillPasswords: boolean
+  /** Idle minutes before the vault locks itself again. */
+  vaultLockMinutes: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -200,8 +223,15 @@ export const DEFAULT_SETTINGS: Settings = {
   showBookmarksButton: true,
   showMediaButton: true,
   showQrButton: true,
+  showMoodButton: true,
+  showIpButton: true,
+  showPasswordsButton: true,
+  showFxButton: true,
+  audioPresets: [],
   showCompatButton: true,
   showAmnesiaButton: true,
+  showBookmarksBar: true,
+  toolbarOrder: [],
   animations: true,
   stylePageScrollbars: true,
 
@@ -240,7 +270,11 @@ export const DEFAULT_SETTINGS: Settings = {
   askWhereToSave: true,
 
   clearCookiesOnForget: false,
-  denyPermissions: true
+  denyPermissions: false,
+
+  offerToSavePasswords: true,
+  autofillPasswords: true,
+  vaultLockMinutes: 5
 }
 
 export function searchUrlFor(engine: SearchEngineId, query: string): string {

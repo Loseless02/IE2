@@ -14,19 +14,34 @@
   </head>
   <body>
     <main>
-      <header>
+      <!-- As a page in a tab. -->
+      <header id="page-head">
         <h1>Bookmarks</h1>
         <p class="tagline">
           Everything you saved, and everything that came across from another browser.
+          Drag a bookmark onto a folder to move it.
         </p>
       </header>
+
+      <!-- As the sidebar docked beside the page. -->
+      <div id="side-head">
+        <span>Bookmarks</span>
+        <button id="side-page" title="Open as a page"></button>
+        <button id="side-close" title="Close the sidebar"></button>
+      </div>
 
       <div id="bar">
         <input id="filter" type="text" spellcheck="false" placeholder="Search bookmarks" />
         <span id="count"></span>
       </div>
 
-      <div id="list"></div>
+      <div id="actions">
+        <button id="new-folder">New folder</button>
+        <button id="export">Export…</button>
+        <span id="note" role="status"></span>
+      </div>
+
+      <div id="tree"></div>
     </main>
     <script type="module" src="./bookmarks.ts"></script>
   </body>

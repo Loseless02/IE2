@@ -6,9 +6,15 @@ import type {
   DownloadState,
   HistoryHit,
   MediaState,
+  PasswordOffer,
+  PasswordsForPage,
+  PermissionRequest,
+  PublicIp,
+  SitePermission,
   ScreenshotResult,
   Suggestion
 } from '../shared/types'
+import type { AudioFx, AudioFxPreset, AudioFxState } from '../shared/audiofx'
 
 /**
  * The only bridge between the chrome UI and the main process. Every entry is a
@@ -91,7 +97,19 @@ const api = {
     ipcRenderer.invoke('tab:group-new-tab', groupId),
   moveTab: (id: number, toIndex: number): Promise<void> =>
     ipcRenderer.invoke('tab:move', id, toIndex),
-  detachTab: (id: number): Promise<boolean> => ipcRenderer.invoke('tab:detach', id),
+  /**
+   * A tab dragged out of its strip. Hover reports where the pointer is, in
+   * screen coordinates, so another window can show where it would land; drop
+   * moves it there, or into a window of its own.
+   */
+  hoverTab: (x: number, y: number): Promise<void> => ipcRenderer.invoke('tab:drag-hover', x, y),
+  dropTab: (id: number, x: number, y: number): Promise<boolean> =>
+    ipcRenderer.invoke('tab:drop', id, x, y),
+  /** A tab from another window is over this strip at x (null: it left). */
+  onTabHover: (callback: (x: number | null) => void): void => {
+    ipcRenderer.on('browser:tab-hover', (_e, x: number | null) => callback(x))
+  },
+  setDropIndex: (index: number): Promise<void> => ipcRenderer.invoke('tab:drop-index', index),
   closedTabs: (): Promise<ClosedTab[]> => ipcRenderer.invoke('tab:closed-list'),
   reopenTab: (id?: number): Promise<boolean> => ipcRenderer.invoke('tab:reopen', id),
   navigate: (input: string): Promise<void> => ipcRenderer.invoke('nav:go', input),
@@ -128,7 +146,65 @@ const api = {
   toggleBookmark: (): Promise<void> => ipcRenderer.invoke('bookmark:toggle'),
   installApp: (): Promise<{ name: string; shortcut: string } | null> =>
     ipcRenderer.invoke('app:install'),
-  listBookmarks: (): Promise<BookmarkEntry[]> => ipcRenderer.invoke('bookmark:list')
+  listBookmarks: (): Promise<BookmarkEntry[]> => ipcRenderer.invoke('bookmark:list'),
+  /** Save the page if it is not saved yet, and get what the star's editor shows. */
+  editBookmark: (): Promise<{ entry: BookmarkEntry; folders: string[]; created: boolean } | null> =>
+    ipcRenderer.invoke('bookmark:edit'),
+  saveBookmark: (url: string, changes: { title?: string; folder?: string }): Promise<void> =>
+    ipcRenderer.invoke('bookmark:save', url, changes),
+  removeBookmark: (url: string): Promise<void> => ipcRenderer.invoke('bookmark:remove', url),
+  bookmarkFolders: (): Promise<string[]> => ipcRenderer.invoke('bookmark:folders'),
+  toggleSidebar: (): Promise<void> => ipcRenderer.invoke('sidebar:toggle'),
+  /** Asks an IP-check service; only called when the Public IP panel opens. */
+  publicIp: (): Promise<PublicIp> => ipcRenderer.invoke('net:public-ip'),
+
+  /** Audio effects for whatever the tab in front is playing. */
+  audioFx: (): Promise<AudioFxState | null> => ipcRenderer.invoke('fx:get'),
+  setAudioFx: (fx: AudioFx, remember: boolean): Promise<AudioFxState | null> =>
+    ipcRenderer.invoke('fx:set', fx, remember),
+  onAudioFxChanged: (callback: () => void): void => {
+    ipcRenderer.on('browser:fx-changed', () => callback())
+  },
+  saveAudioPresets: (presets: AudioFxPreset[]): Promise<void> =>
+    ipcRenderer.invoke('settings:set', 'audioPresets', presets),
+
+  /** The password manager, as the toolbar sees it: never a password itself. */
+  onPasswordOffer: (callback: (offer: PasswordOffer) => void): void => {
+    ipcRenderer.on('browser:password-offer', (_e, offer: PasswordOffer) => callback(offer))
+  },
+  onPasswordsChanged: (callback: () => void): void => {
+    ipcRenderer.on('browser:passwords-changed', () => callback())
+  },
+  answerPasswordOffer: (
+    choice: 'save' | 'never' | 'dismiss',
+    master?: string
+  ): Promise<{ ok: boolean; error?: string; updated?: boolean }> =>
+    ipcRenderer.invoke('pw:offer-answer', choice, master),
+  passwordsForPage: (): Promise<PasswordsForPage | null> => ipcRenderer.invoke('pw:for-page'),
+  fillPassword: (id: number): Promise<boolean> => ipcRenderer.invoke('pw:fill', id),
+  unlockPasswords: (master: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('pw:unlock', master),
+  /** A site asking for the camera, location and the like. */
+  onPermissionRequest: (callback: (request: PermissionRequest) => void): void => {
+    ipcRenderer.on('browser:permission-request', (_e, request: PermissionRequest) => callback(request))
+  },
+  answerPermission: (id: number, allow: boolean, remember: boolean): Promise<void> =>
+    ipcRenderer.invoke('permission:answer', id, allow, remember),
+  pendingPermissions: (): Promise<PermissionRequest[]> => ipcRenderer.invoke('permission:pending'),
+  sitePermissions: (origin: string): Promise<SitePermission[]> =>
+    ipcRenderer.invoke('permission:site', origin),
+  setSitePermission: (origin: string, permission: string, allow: boolean | null): Promise<void> =>
+    ipcRenderer.invoke('permission:set', origin, permission, allow),
+  /** The toolbar tools in the order they were dragged into. */
+  setToolbarOrder: (order: string[]): Promise<void> =>
+    ipcRenderer.invoke('settings:set', 'toolbarOrder', order),
+  /** Ctrl+D, caught wherever the focus was. */
+  onEditBookmark: (callback: () => void): void => {
+    ipcRenderer.on('browser:edit-bookmark', () => callback())
+  },
+  onBookmarksChanged: (callback: () => void): void => {
+    ipcRenderer.on('browser:bookmarks-changed', () => callback())
+  }
 }
 
 contextBridge.exposeInMainWorld('browser', api)

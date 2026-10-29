@@ -1,4 +1,4 @@
-import { BaseWindow, WebContentsView, shell, session } from 'electron'
+import { BaseWindow, WebContentsView, shell } from 'electron'
 import { join } from 'node:path'
 import {
   CHROME_HEIGHT,
@@ -11,7 +11,7 @@ import {
 } from '../shared/types'
 import { isAllowedUrl, normalizeInput } from './url'
 import { nextGroupColour, type TabGroupColour } from '../shared/groups'
-import { ALL_PARTITIONS, AMNESIA_PARTITION, PARTITION } from './partitions'
+import { AMNESIA_PARTITION, PARTITION } from './partitions'
 import { forgetTabBlocked, resetTabBlocked } from './adblock'
 import { capturePageText, shouldIndex } from './capture'
 import { detectInstallable } from './pwa'
@@ -70,8 +70,18 @@ const PAGE_SCROLLBAR_CSS = `
  */
 const OMNIBOX_GRACE_MS = 2500
 
-interface Tab {
+/**
+ * Tab ids are unique across every window, not per window, so a tab dragged
+ * into another window keeps its id and cannot collide with one already there.
+ */
+let nextTabId = 1
+
+export interface Tab {
   id: number
+  /** The window's manager this tab currently lives in. Changes when dragged across. */
+  owner: TabManager
+  /** What the tab was opened with — its address until the first page commits. */
+  startUrl: string
   view: WebContentsView
   favicon: string | null
   amnesia: boolean
@@ -211,7 +221,6 @@ const CLOSED_HISTORY = 25
 export class TabManager {
   private tabs: Tab[] = []
   private activeId: number | null = null
-  private nextId = 1
 
   /** Most recently closed first. Amnesia tabs are never recorded. */
   private closed: ClosedTab[] = []
@@ -225,6 +234,10 @@ export class TabManager {
 
   /** Share of the width given to the left pane. */
   private splitRatio = 0.5
+
+  /** See {@link setInsets}. */
+  private insetTop = CHROME_HEIGHT
+  private insetRight = 0
 
   /** Tab groups, keyed by id. Strip order is derived from the tabs themselves. */
   private groups = new Map<number, TabGroup>()
@@ -263,7 +276,9 @@ export class TabManager {
     })
 
     const tab: Tab = {
-      id: this.nextId++,
+      id: nextTabId++,
+      owner: this,
+      startUrl: url,
       view,
       favicon: null,
       amnesia,
@@ -288,7 +303,7 @@ export class TabManager {
     this.normalise()
 
     this.wire(tab)
-    attachContextMenu(view.webContents, () => this, amnesia)
+    attachContextMenu(view.webContents, () => tab.owner, amnesia)
 
     this.window.contentView.addChildView(view)
     this.raiseChrome()
@@ -370,13 +385,27 @@ export class TabManager {
 
     this.applyVisibility()
     this.layout()
-    if (options.focusPage !== false) this.focusActive()
+    // A new-tab page has nothing to read, so landing on one — after Ctrl+W, or
+    // by clicking it — puts the caret in the omnibox, as opening one does.
+    if (options.focusPage !== false) {
+      if (this.isBlank(tab)) this.onShortcut('focus-omnibox')
+      else this.focusActive()
+    }
     this.emit()
+  }
+
+  /** Showing the new-tab page, or nothing yet (a replacement still loading). */
+  private isBlank(tab: Tab): boolean {
+    const url = this.urlOf(tab) || tab.startUrl
+    return !url || url === 'about:blank' || url.replace(/\/$/, '') === HOME_URL
   }
 
   navigate(input: string): void {
     const tab = this.active()
     if (!tab) return
+    // Typed in the omnibox and sent: the caret's job there is done. Otherwise a
+    // new tab still inside its grace period pulls focus back when this loads.
+    tab.wantsOmnibox = false
     tab.view.webContents.loadURL(normalizeInput(input))
   }
 
@@ -574,30 +603,79 @@ export class TabManager {
     this.onOpenWindow(url)
   }
 
+  tabCount(): number {
+    return this.tabs.length
+  }
+
   /**
-   * Drag a tab out of the strip: the URL opens in a fresh window and the
-   * original tab closes, so the page appears to have moved rather than been
-   * duplicated. Amnesia tabs are refused — a new window would restore them to
-   * the recording session, which is the opposite of what they are for.
+   * Hand a tab to another window's manager. The page itself moves — its view
+   * is re-parented, not reloaded — so scroll position, form input, a playing
+   * video and Back/Forward all come along. Group membership does not: groups
+   * belong to a window.
    */
-  detachTab(id: number): boolean {
-    const tab = this.tabs.find((t) => t.id === id)
-    if (!tab || tab.amnesia) return false
+  moveTabTo(id: number, target: TabManager, index?: number): boolean {
+    if (target === this) return false
 
-    const url = tab.view.webContents.getURL()
-    if (!url || url === 'about:blank') return false
+    const tab = this.release(id)
+    if (!tab) return false
 
-    // A lone tab is already its own window; moving it would leave an empty one.
-    if (this.tabs.length === 1) return false
-
-    this.onOpenWindow(url)
-    this.closeTab(id)
+    target.adopt(tab, index)
     return true
   }
 
+  /** Take a tab out of this window without closing its page. */
+  private release(id: number): Tab | null {
+    const index = this.tabs.findIndex((t) => t.id === id)
+    if (index === -1) return null
+
+    if (this.splitId === id) this.splitId = null
+
+    const [tab] = this.tabs.splice(index, 1)
+    this.window.contentView.removeChildView(tab.view)
+    tab.groupId = null
+
+    if (this.activeId === id) {
+      const next = this.tabs[index] ?? this.tabs[this.tabs.length - 1]
+      if (next) this.activate(next.id, { focusPage: false })
+      else this.activeId = null
+    }
+
+    this.normalise()
+    this.layout()
+    this.emit()
+    return tab
+  }
+
+  private adopt(tab: Tab, index?: number): void {
+    tab.owner = this
+
+    if (index === undefined) this.tabs.push(tab)
+    else this.tabs.splice(Math.max(0, Math.min(index, this.tabs.length)), 0, tab)
+
+    this.window.contentView.addChildView(tab.view)
+    this.raiseChrome()
+    tab.view.setVisible(false)
+
+    this.normalise()
+    this.activate(tab.id)
+  }
+
+  /**
+   * Room the page leaves for the browser around it: the chrome above (taller
+   * while the bookmarks bar shows) and the bookmarks sidebar on the right.
+   */
+  setInsets(top: number, right: number): void {
+    if (top === this.insetTop && right === this.insetRight) return
+    this.insetTop = top
+    this.insetRight = right
+    this.layout()
+  }
+
   layout(): void {
-    const { width, height } = this.window.getContentBounds()
-    const top = CHROME_HEIGHT
+    const bounds = this.window.getContentBounds()
+    const width = Math.max(0, bounds.width - this.insetRight)
+    const height = bounds.height
+    const top = this.insetTop
     const usable = Math.max(0, height - top)
 
     const split = this.splitId !== null ? this.tabs.find((t) => t.id === this.splitId) : undefined
@@ -812,7 +890,7 @@ export class TabManager {
     })
 
     this.wire(tab)
-    attachContextMenu(tab.view.webContents, () => this, tab.amnesia)
+    attachContextMenu(tab.view.webContents, () => tab.owner, tab.amnesia)
 
     this.window.contentView.addChildView(tab.view)
     this.raiseChrome()
@@ -1046,7 +1124,10 @@ export class TabManager {
 
   private wire(tab: Tab): void {
     const wc = tab.view.webContents
-    const update = (): void => this.emit()
+    // Through the tab, not `this`: a tab dragged to another window changes
+    // owner, and its listeners have to follow it there.
+    const owner = (): TabManager => tab.owner
+    const update = (): void => owner().emit()
 
     // This tab gets around nine listeners from us, and the ad blocker adds its
     // own each time blocking is re-enabled. The default ceiling of ten is a
@@ -1058,7 +1139,7 @@ export class TabManager {
       const action = shortcutFor(input)
       if (!action) return
       event.preventDefault()
-      this.onShortcut(action)
+      owner().onShortcut(action)
     })
 
     // The single gate on writing anything down. An amnesia tab never records.
@@ -1070,7 +1151,7 @@ export class TabManager {
 
     wc.on('page-title-updated', (_event, title) => {
       if (remembers(wc.getURL())) updateTitle(wc.getURL(), title)
-      this.emit()
+      owner().emit()
     })
 
     wc.on('did-navigate', (_event, url) => {
@@ -1078,7 +1159,7 @@ export class TabManager {
       resetTabBlocked(wc.id)
       tab.installable = null
       if (remembers(url)) recordVisit(url, wc.getTitle())
-      this.emit()
+      owner().emit()
     })
 
     // Optional: give websites the same restrained scrollbars as the browser.
@@ -1088,13 +1169,13 @@ export class TabManager {
     })
 
     wc.on('did-finish-load', () => {
-      if (!tab.wantsOmnibox || this.activeId !== tab.id) return
+      if (!tab.wantsOmnibox || owner().activeId !== tab.id) return
 
       // Twice: once now, and once after the page has had a moment to run its
       // own load handlers, which is where an autofocus would otherwise win.
-      this.onShortcut('focus-omnibox')
+      owner().onShortcut('focus-omnibox')
       setTimeout(() => {
-        if (tab.wantsOmnibox && this.activeId === tab.id) this.onShortcut('focus-omnibox')
+        if (tab.wantsOmnibox && owner().activeId === tab.id) owner().onShortcut('focus-omnibox')
       }, 150)
     })
 
@@ -1110,7 +1191,7 @@ export class TabManager {
 
       // Inside it, this is the load-time steal. Take the caret back — on the
       // next tick, so Chromium has finished the focus change it is announcing.
-      if (this.activeId === tab.id) setTimeout(() => this.onShortcut('focus-omnibox'), 0)
+      if (owner().activeId === tab.id) setTimeout(() => owner().onShortcut('focus-omnibox'), 0)
     })
 
     // Compatibility Mode styling has to be reapplied after every navigation.
@@ -1125,12 +1206,12 @@ export class TabManager {
 
     // Once the page has settled, capture its text for the full-text index.
     wc.on('did-stop-loading', () => {
-      this.emit()
+      owner().emit()
 
       void detectInstallable(wc).then((found) => {
         if (wc.isDestroyed()) return
         tab.installable = found
-        this.emit()
+        owner().emit()
       })
 
       const url = wc.getURL()
@@ -1146,13 +1227,13 @@ export class TabManager {
     wc.on('page-favicon-updated', (_event, favicons) => {
       tab.favicon = favicons[0] ?? null
       if (tab.favicon && remembers(wc.getURL())) updateFavicon(wc.getURL(), tab.favicon)
-      this.emit()
+      owner().emit()
     })
 
     // target=_blank / window.open: open a real tab instead of a popup window.
     // A link opened from an amnesia tab stays in amnesia.
     wc.setWindowOpenHandler(({ url }) => {
-      if (isAllowedUrl(url)) this.createTab(url, { amnesia: tab.amnesia })
+      if (isAllowedUrl(url)) owner().createTab(url, { amnesia: tab.amnesia })
       return { action: 'deny' }
     })
 
@@ -1164,18 +1245,5 @@ export class TabManager {
         shell.openExternal(url)
       }
     })
-  }
-}
-
-/**
- * Deny every permission request by default. Prompting the user is a later
- * milestone; until that UI exists, silently granting camera/mic/geolocation
- * would be worse than refusing.
- */
-export function lockDownSession(): void {
-  for (const partition of ALL_PARTITIONS) {
-    const ses = session.fromPartition(partition)
-    ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
-    ses.setPermissionCheckHandler(() => false)
   }
 }

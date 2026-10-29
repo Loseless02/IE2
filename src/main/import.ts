@@ -1,8 +1,8 @@
-import { app } from 'electron'
+import { app, type Session } from 'electron'
 import { DatabaseSync } from 'node:sqlite'
 import { copyFileSync, existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ImportPayload, ImportSource } from '../shared/types'
+import { BOOKMARKS_BAR, type ImportPayload, type ImportSource } from '../shared/types'
 
 /**
  * Reading another browser's profile: bookmarks are JSON, history is SQLite.
@@ -67,7 +67,8 @@ export function scanForProfiles(): ImportSource[] {
           browser: 'Firefox',
           profile: entry.replace(/^\w+\./, ''),
           hasBookmarks: true,
-          hasHistory: true
+          hasHistory: true,
+          hasCookies: existsSync(join(dir, 'cookies.sqlite'))
         })
       }
       continue
@@ -87,7 +88,8 @@ export function scanForProfiles(): ImportSource[] {
         browser: candidate.browser,
         profile: profileLabel(dir, entry),
         hasBookmarks,
-        hasHistory
+        hasHistory,
+        hasCookies: false
       })
     }
 
@@ -98,7 +100,8 @@ export function scanForProfiles(): ImportSource[] {
         browser: 'Opera',
         profile: 'Default',
         hasBookmarks: true,
-        hasHistory: existsSync(join(candidate.userData, 'History'))
+        hasHistory: existsSync(join(candidate.userData, 'History')),
+        hasCookies: false
       })
     }
   }
@@ -205,7 +208,10 @@ function readChromiumBookmarks(dir: string): ImportPayload['bookmarks'] {
 
   for (const [key, root] of Object.entries(parsed.roots ?? {})) {
     if (typeof root !== 'object' || root === null) continue
-    const named = { ...root, name: root.name || defaultRootName(key) }
+    // The bar is always filed under the same name, whatever language the other
+    // browser called it in, so it lands in IE2's own bookmarks bar.
+    const name = key === 'bookmark_bar' ? BOOKMARKS_BAR : root.name || defaultRootName(key)
+    const named = { ...root, name }
     walk(named, '')
   }
 
@@ -303,6 +309,68 @@ function readFirefox(dir: string): ImportPayload {
   } finally {
     opened.cleanup()
   }
+}
+
+/**
+ * Copy a Firefox profile's cookies into IE2's own session, so sites it was
+ * signed in to stay signed in. Cookies are credentials, so this only ever runs
+ * when asked for, and a site may still ask to sign in again — some tie a
+ * session to the browser it started in.
+ */
+export async function importFirefoxCookies(dir: string, target: Session): Promise<number> {
+  const opened = openCopy(join(dir, 'cookies.sqlite'), 'cookies')
+  if (!opened) return 0
+
+  let rows: {
+    name: string
+    value: string
+    host: string
+    path: string
+    expiry: number
+    isSecure: number
+    isHttpOnly: number
+    sameSite: number
+  }[] = []
+  try {
+    rows = opened.db
+      .prepare(
+        `SELECT name, value, host, path, expiry, isSecure, isHttpOnly, sameSite
+         FROM moz_cookies WHERE originAttributes = ''`
+      )
+      .all() as unknown as typeof rows
+  } catch {
+    return 0
+  } finally {
+    opened.cleanup()
+  }
+
+  const now = Date.now() / 1000
+  let count = 0
+  for (const row of rows) {
+    // Firefox has stored this in seconds and, in newer versions, milliseconds.
+    const expires = row.expiry > 1e11 ? row.expiry / 1000 : row.expiry
+    if (!row.host || expires <= now) continue
+
+    const host = row.host.replace(/^\./, '')
+    try {
+      await target.cookies.set({
+        url: `${row.isSecure ? 'https' : 'http'}://${host}${row.path || '/'}`,
+        name: row.name,
+        value: row.value,
+        // A leading dot is a cookie for the domain and its subdomains.
+        domain: row.host.startsWith('.') ? row.host : undefined,
+        path: row.path || '/',
+        secure: row.isSecure === 1,
+        httpOnly: row.isHttpOnly === 1,
+        expirationDate: expires,
+        sameSite: row.sameSite === 2 ? 'strict' : row.sameSite === 1 ? 'lax' : 'no_restriction'
+      })
+      count++
+    } catch {
+      // One malformed cookie is not a reason to stop.
+    }
+  }
+  return count
 }
 
 /** Everything importable from one profile, read but not yet written. */

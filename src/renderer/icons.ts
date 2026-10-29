@@ -77,6 +77,25 @@ const PATHS: Record<string, string> = {
   globe:
     '<circle cx="12" cy="12" r="9.5"/><path d="M2.6 12h18.8"/><path d="M12 2.5a15 15 0 0 1 4 9.5 15 15 0 0 1-4 9.5 15 15 0 0 1-4-9.5 15 15 0 0 1 4-9.5z"/>',
   text: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+  folder: '<path d="M3 6.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  copy:
+    '<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 8.5v-3a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/>',
+  eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+
+  // --- tools -----------------------------------------------------------------
+  /** Mood: a rain cloud. */
+  mood:
+    '<path d="M7 15.5a4.5 4.5 0 1 1 1.1-8.86A6 6 0 0 1 19.6 9.1 3.8 3.8 0 0 1 17.5 16"/><path d="M8.5 19l-1 2.5M12.5 18l-1.5 3.5M16.5 19l-1 2.5"/>',
+  /** Public IP: a screen with the letters on it. */
+  ip:
+    '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M8 8v5M11 13V8h2.2a1.8 1.8 0 0 1 0 3.6H11"/>',
+  /** Audio effects: a waveform. */
+  fx: '<path d="M3 12h1.5M7 8.5v7M10.5 5v14M14 8v8M17.5 10v4M21 12h-1.5"/>',
+  key: '<circle cx="7.5" cy="15.5" r="4"/><path d="M10.4 12.6 20 3M16.5 6.5l3 3M13.8 9.2l2 2"/>',
+  lock: '<rect x="4.5" y="10.5" width="15" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
+  mic: '<rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',
+  pin: '<path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
 
   // --- media -----------------------------------------------------------------
   play: '<path d="M7 4.4v15.2L20 12z"/>',

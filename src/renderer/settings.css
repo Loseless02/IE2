@@ -869,3 +869,41 @@ input[type='text'] {
     transform: translateY(8px);
   }
 }
+
+/* --- import: what to bring across ----------------------------------------- */
+
+.import-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 6px;
+}
+
+.import-picks .pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.import-picks .pick input {
+  accent-color: var(--accent);
+}
+
+.import-picks .pick.unavailable {
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+.import-warn {
+  display: block;
+  margin-top: 6px;
+  color: #e0a32e;
+  font-size: 12px;
+}
+
+.chip.refused {
+  opacity: 0.75;
+  text-decoration: line-through;
+}

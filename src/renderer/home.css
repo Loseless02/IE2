@@ -316,26 +316,69 @@ footer {
   transition: opacity 200ms ease;
 }
 
-/* Over a photo, panels need their own surface to stay readable. */
+/* Over a photo the panels get a dark surface of their own, so the text on them
+   has to be light whatever the theme is — a light theme's dark text on a dark
+   panel was unreadable. The photo itself is left exactly as chosen. */
+body.has-wallpaper {
+  --text: #f3f4f6;
+  --text-dim: #c9ced6;
+  --border: #ffffff26;
+  --hover: rgba(255, 255, 255, 0.14);
+}
+
 body.has-wallpaper .stat,
 body.has-wallpaper #recent-list,
 body.has-wallpaper #recall-input {
-  background: #16181cd9;
+  background: #121418e0;
   border-color: var(--border);
 }
 
+/* Text that sits straight on the photo: a tight shadow for the letter edges
+   and a wide soft one so a bright patch behind them cannot wash them out. */
 body.has-wallpaper h1,
 body.has-wallpaper .tagline,
-body.has-wallpaper h2 {
-  text-shadow: 0 1px 12px #000000a6;
+body.has-wallpaper h2,
+body.has-wallpaper #clock,
+body.has-wallpaper #verdict {
+  color: #fff;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 14px rgba(0, 0, 0, 0.7),
+    0 0 32px rgba(0, 0, 0, 0.45);
 }
 
+body.has-wallpaper .tagline,
+body.has-wallpaper h2,
+body.has-wallpaper #clock-date {
+  color: #e9ecf1;
+}
+
+/* The small buttons that sit on the photo get a surface too. */
+body.has-wallpaper #recent-all,
+body.has-wallpaper #forget-all,
+body.has-wallpaper #customise {
+  background: #121418cc;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+body.has-wallpaper #recent-all:hover {
+  border-color: var(--accent);
+}
+
+body.has-wallpaper #forget-all:hover {
+  border-color: #a84a4a;
+  color: #ff9b9b;
+}
+
+/* Glass keeps the photo visible through the cards, tinted dark enough that
+   light text holds up over a bright sky. */
 body.glass .stat,
 body.glass #recent-list,
 body.glass #recall-input {
-  background: var(--overlay);
+  background: rgba(14, 16, 20, 0.55);
   border-color: var(--border);
-  backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
 }
 
 #clock {

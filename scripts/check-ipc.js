@@ -32,7 +32,13 @@ function handled(source) {
   ])
 }
 
-const preloads = ['src/preload/index.ts', 'src/preload/internal.ts', 'src/preload/adblock.ts']
+const preloads = [
+  'src/preload/index.ts',
+  'src/preload/internal.ts',
+  'src/preload/adblock.ts',
+  'src/preload/passwords.ts',
+  'src/preload/audiofx.ts'
+]
 
 const wanted = new Set()
 for (const file of preloads) for (const channel of invoked(read(file))) wanted.add(channel)
@@ -42,7 +48,9 @@ const mainFiles = [
   'src/main/index.ts',
   'src/main/adblock.ts',
   'src/main/downloads.ts',
-  'src/main/tabs.ts'
+  'src/main/tabs.ts',
+  'src/main/passwords.ts',
+  'src/main/audiofx.ts'
 ]
 
 const answered = new Set()

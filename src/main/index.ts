@@ -15,16 +15,22 @@ import {
 } from 'electron'
 import { join } from 'node:path'
 import {
+  BOOKMARKS_BAR_HEIGHT,
+  BOOKMARKS_URL,
   CHROME_HEIGHT,
   DROPDOWN_MAX_HEIGHT,
   HOME_URL,
+  PASSWORDS_URL,
   READER_URL,
+  SIDEBAR_WIDTH,
   TITLEBAR_HEIGHT,
+  type BookmarkEntry,
   type BrowserState,
   type ReaderArticle,
   type TabsState
 } from '../shared/types'
-import { TabManager, lockDownSession, type Shortcut } from './tabs'
+import { TabManager, type Shortcut } from './tabs'
+import { answerPermission, initPermissions, pendingPermissions } from './permissions'
 import { ALL_PARTITIONS, PARTITION } from './partitions'
 import { buildSuggestions, engineSuggestions } from './suggest'
 import {
@@ -42,14 +48,19 @@ import {
   toggleSiteBlocking,
   updateFilterLists
 } from './adblock'
-import { appIconPath, appUserModelIdFor, installApp } from './pwa'
+import { appIconPath, appLaunchArgs, appUserModelIdFor, installApp } from './pwa'
 import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { showTabMenu } from './menus'
+import { exportBookmarks } from './bookmark-export'
+import { normalizeInput } from './url'
+import { publicIp } from './publicip'
+import { registerPasswordIpc, registerVaultPageIpc } from './passwords'
+import { registerAudioFxIpc } from './audiofx'
 import { captureVisible, saveLastCapture } from './screenshot'
 import { togglePictureInPicture } from './pip'
 import { controlMedia, readMedia } from './media'
-import { readProfile, scanForProfiles } from './import'
+import { importFirefoxCookies, readProfile, scanForProfiles } from './import'
 import {
   addLanguage,
   exportLocale,
@@ -85,6 +96,14 @@ import {
 import {
   addBookmark,
   addNeverRemember,
+  bookmarkFolders,
+  createBookmarkFolder,
+  deleteBookmarkFolder,
+  getBookmark,
+  listSitePermissions,
+  renameBookmarkFolder,
+  setSitePermission,
+  updateBookmark,
   clearAllHistory,
   clearHistoryOnly,
   closeDb,
@@ -119,6 +138,22 @@ interface Shell {
   chrome: WebContentsView
   tabs: TabManager
   dropdownHeight: number
+  /** The bookmarks sidebar docked on the right, while it is open. */
+  sidebar: WebContentsView | null
+  /**
+   * Where a tab dragged in from another window would land in this strip, as
+   * last reported by this window's renderer, or null when nothing is hovering.
+   */
+  dropIndex: number | null
+}
+
+/** A tab torn out of a window, waiting for the new window it opens to load. */
+interface TornTab {
+  from: Shell
+  tabId: number
+  /** Screen point it was dropped at; the new window opens under it. */
+  x: number
+  y: number
 }
 
 /** Keyed by the chrome view's webContents id, which is what IPC events carry. */
@@ -147,7 +182,19 @@ const findWired = new WeakSet<Electron.WebContents>()
  * a last resort rather than a default.
  */
 function shellFor(event: Electron.IpcMainInvokeEvent): Shell | undefined {
-  return shells.get(event.sender.id) ?? shellOwningTab(event.sender.id) ?? focusedShell()
+  return (
+    shells.get(event.sender.id) ??
+    shellOwningTab(event.sender.id) ??
+    shellOwningSidebar(event.sender.id) ??
+    focusedShell()
+  )
+}
+
+function shellOwningSidebar(webContentsId: number): Shell | undefined {
+  for (const shell of shells.values()) {
+    if (shell.sidebar?.webContents.id === webContentsId) return shell
+  }
+  return undefined
 }
 
 function shellOwningTab(webContentsId: number): Shell | undefined {
@@ -195,10 +242,14 @@ function applyOverlay(): void {
   }
 }
 
-function createWindow(startUrl?: string): void {
+function createWindow(startUrl?: string, torn?: TornTab): void {
+  // A torn-out tab opens its window the size of the one it came from, with
+  // the tab strip under the pointer, so the tab appears to stay in the hand.
+  const from = torn?.from.window.getBounds()
   const win = new BaseWindow({
-    width: 1280,
-    height: 820,
+    width: from?.width ?? 1280,
+    height: from?.height ?? 820,
+    ...(torn ? { x: Math.round(torn.x - 120), y: Math.round(torn.y - 20) } : {}),
     minWidth: 520,
     minHeight: 400,
     title: 'IE2',
@@ -230,7 +281,9 @@ function createWindow(startUrl?: string): void {
   const shell = {
     window: win,
     chrome: chromeView,
-    dropdownHeight: 0
+    dropdownHeight: 0,
+    dropIndex: null,
+    sidebar: null
   } as Shell
 
   shell.tabs = new TabManager(
@@ -247,8 +300,8 @@ function createWindow(startUrl?: string): void {
 
   shells.set(chromeView.webContents.id, shell)
 
-  layoutChrome(shell)
-  win.on('resize', () => layoutChrome(shell))
+  layoutShell(shell)
+  win.on('resize', () => layoutShell(shell))
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     chromeView.webContents.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -256,9 +309,17 @@ function createWindow(startUrl?: string): void {
     chromeView.webContents.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  chromeView.webContents.once('did-finish-load', () =>
-    startUrl ? shell.tabs.createTab(startUrl) : restoreSession(shell)
-  )
+  chromeView.webContents.once('did-finish-load', () => {
+    if (torn) {
+      // The source window may have gone, or closed the tab, while this loaded.
+      const moved = shells.has(torn.from.chrome.webContents.id) &&
+        torn.from.tabs.moveTabTo(torn.tabId, shell.tabs)
+      if (!moved) shell.tabs.createTab()
+      return
+    }
+    if (startUrl) shell.tabs.createTab(startUrl)
+    else restoreSession(shell)
+  })
 
   // The chrome UI handles its own typing, but shortcuts are resolved centrally
   // so Ctrl+W means the same thing no matter where the focus happens to be.
@@ -317,6 +378,7 @@ function createWindow(startUrl?: string): void {
 
   win.on('closed', () => {
     clearInterval(sleepTimer)
+    if (shell.sidebar && !shell.sidebar.webContents.isDestroyed()) shell.sidebar.webContents.close()
     shells.delete(chromeView.webContents.id)
   })
 }
@@ -339,12 +401,27 @@ function appModeUrl(argv: string[]): string | null {
   }
 }
 
+/** Open installed-app windows, one per site, so a second launch focuses it. */
+const appWindows = new Map<string, BrowserWindow>()
+
+/**
+ * An installed web app: its own window, its own taskbar button and icon, no
+ * tabs and no address bar — whether or not the browser is already open.
+ *
+ * The identity is set on the window, not the process. Setting it process-wide
+ * (as this once did) renamed the browser too, and a launch while the browser
+ * was running never got here at all: the running copy took the shortcut's
+ * arguments, ignored --app, and just focused itself.
+ */
 function createAppWindow(url: string): void {
   const host = new URL(url).hostname
 
-  // This process serves one installed app, so it takes that app's identity:
-  // its own taskbar button, its own icon, no grouping with the browser.
-  app.setAppUserModelId(appUserModelIdFor(host))
+  const open = appWindows.get(host)
+  if (open && !open.isDestroyed()) {
+    if (open.isMinimized()) open.restore()
+    open.focus()
+    return
+  }
 
   const icon = appIconPath(host)
 
@@ -362,6 +439,19 @@ function createAppWindow(url: string): void {
       nodeIntegration: false
     }
   })
+
+  // Its own taskbar button and icon, and pinning it pins the app, not IE2.
+  if (process.platform === 'win32') {
+    win.setAppDetails({
+      appId: appUserModelIdFor(host),
+      ...(existsSync(icon) ? { appIconPath: icon, appIconIndex: 0 } : {}),
+      relaunchCommand: `"${process.execPath}" ${appLaunchArgs(url)}`,
+      relaunchDisplayName: host
+    })
+  }
+
+  appWindows.set(host, win)
+  win.on('closed', () => appWindows.delete(host))
 
   win.loadURL(url)
 
@@ -447,7 +537,9 @@ function runShortcut(shell: Shell, action: Shortcut): void {
       shell.tabs.reload()
       break
     case 'bookmark':
-      toggleBookmarkForActiveTab(shell)
+      // The editor lives in the chrome, which needs focus to type a name.
+      shell.chrome.webContents.focus()
+      shell.chrome.webContents.send('browser:edit-bookmark')
       break
     case 'back':
       shell.tabs.goBack()
@@ -484,7 +576,81 @@ function toggleBookmarkForActiveTab(shell: Shell): void {
 
   if (shell.tabs.state().bookmarked) removeBookmark(url)
   else addBookmark(url, shell.tabs.activeTitle())
-  shell.tabs.refresh()
+  bookmarksChanged()
+}
+
+/**
+ * The star: save the page if it is not saved yet — straight into the bookmarks
+ * bar, where it can be seen — and hand back what the editor needs to show
+ * where it went and let it be renamed or moved.
+ */
+function bookmarkActiveTab(
+  shell: Shell
+): { entry: BookmarkEntry; folders: string[]; created: boolean } | null {
+  const url = shell.tabs.activeUrl()
+  if (!url || url === 'about:blank') return null
+
+  let entry = getBookmark(url)
+  const created = entry === null
+  if (!entry) {
+    addBookmark(url, shell.tabs.activeTitle() || url)
+    entry = getBookmark(url)
+    bookmarksChanged()
+  }
+  return entry ? { entry, folders: bookmarkFolders(), created } : null
+}
+
+/** Every window's bar, star and sidebar redraw from the new bookmarks. */
+function bookmarksChanged(): void {
+  for (const shell of shells.values()) {
+    pushState(shell)
+    if (!shell.chrome.webContents.isDestroyed()) shell.chrome.webContents.send('browser:bookmarks-changed')
+  }
+  // The sidebars, and any bookmarks page open in a tab.
+  for (const contents of webContents.getAllWebContents()) {
+    if (!contents.isDestroyed() && contents.getURL().startsWith(BOOKMARKS_URL)) {
+      contents.send('ie2:bookmarks-changed')
+    }
+  }
+}
+
+/**
+ * Open or close the bookmarks sidebar. It is a page of its own docked beside
+ * the tab — the tab gets narrower rather than covered — so it can be as tall
+ * as the window and scroll by itself.
+ */
+function toggleSidebar(shell: Shell, open = !shell.sidebar): void {
+  if (open && !shell.sidebar) {
+    const view = new WebContentsView({
+      webPreferences: {
+        partition: PARTITION,
+        preload: join(__dirname, '../preload/internal.js'),
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+    view.setBackgroundColor(themeById(getSettings().theme).colours.bg)
+
+    // It only ever shows the bookmarks page; anything else is refused.
+    view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    view.webContents.on('will-navigate', (event, url) => {
+      if (!isInternalUrl(url)) event.preventDefault()
+    })
+
+    view.webContents.loadURL(`${BOOKMARKS_URL}/?sidebar`)
+    shell.window.contentView.addChildView(view)
+    shell.sidebar = view
+    raiseChrome(shell)
+  } else if (!open && shell.sidebar) {
+    const view = shell.sidebar
+    shell.sidebar = null
+    shell.window.contentView.removeChildView(view)
+    view.webContents.close()
+  }
+
+  layoutShell(shell)
+  pushState(shell)
 }
 
 /**
@@ -531,6 +697,8 @@ async function takeScreenshot(shell: Shell): Promise<void> {
 /** Settings are global: apply once, then tell every window about it. */
 function broadcastSettings(next: Settings): Settings {
   for (const shell of shells.values()) {
+    // The bookmarks bar may have been switched on or off.
+    layoutShell(shell)
     pushState(shell)
     if (!shell.chrome.webContents.isDestroyed()) {
       shell.chrome.webContents.send('browser:settings', next)
@@ -553,7 +721,8 @@ function withAdblock(shell: Shell, state: TabsState): BrowserState {
     adblock: adblockStats(shell.tabs.activeWebContentsId()),
     messages: messagesFor(getSettings().language),
     downloads: listDownloads(),
-    settings: getSettings()
+    settings: getSettings(),
+    sidebarOpen: shell.sidebar !== null
   }
 }
 
@@ -566,10 +735,30 @@ function raiseChrome(shell: Shell): void {
   shell.window.contentView.addChildView(shell.chrome)
 }
 
+/** Toolbar and tab strip, plus the bookmarks bar when it is shown. */
+function chromeTop(): number {
+  return CHROME_HEIGHT + (getSettings().showBookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0)
+}
+
 function layoutChrome(shell: Shell): void {
   const { width, height } = shell.window.getContentBounds()
-  const wanted = CHROME_HEIGHT + shell.dropdownHeight
+  const wanted = chromeTop() + shell.dropdownHeight
   shell.chrome.setBounds({ x: 0, y: 0, width, height: Math.min(wanted, height) })
+}
+
+/** Chrome on top, the sidebar down the right, and the tabs in what is left. */
+function layoutShell(shell: Shell): void {
+  layoutChrome(shell)
+
+  const { width, height } = shell.window.getContentBounds()
+  const top = chromeTop()
+  shell.sidebar?.setBounds({
+    x: Math.max(0, width - SIDEBAR_WIDTH),
+    y: top,
+    width: Math.min(SIDEBAR_WIDTH, width),
+    height: Math.max(0, height - top)
+  })
+  shell.tabs.setInsets(top, shell.sidebar ? SIDEBAR_WIDTH : 0)
 }
 
 /**
@@ -582,6 +771,71 @@ function setDropdownHeight(shell: Shell, px: number): void {
   if (next === shell.dropdownHeight) return
   shell.dropdownHeight = next
   layoutChrome(shell)
+}
+
+/**
+ * The other window whose tab strip is under this screen point, if any. A little
+ * slack around the strip, because a drop aimed at a thin target lands just off
+ * it as often as on it.
+ */
+function shellAtStrip(source: Shell, x: number, y: number): Shell | undefined {
+  for (const shell of shells.values()) {
+    if (shell === source || shell.window.isMinimized() || !shell.window.isVisible()) continue
+    const box = shell.window.getContentBounds()
+    if (x < box.x || x > box.x + box.width) continue
+    if (y < box.y - 8 || y > box.y + TITLEBAR_HEIGHT + 8) continue
+    return shell
+  }
+  return undefined
+}
+
+function clearTabHover(except?: Shell): void {
+  for (const shell of shells.values()) {
+    if (shell === except || shell.dropIndex === null) continue
+    shell.dropIndex = null
+    if (!shell.chrome.webContents.isDestroyed()) shell.chrome.webContents.send('browser:tab-hover', null)
+  }
+}
+
+/**
+ * A tab is being dragged outside its own strip. If it is over another window's
+ * strip, that window shows where it would land, and reports the slot back
+ * through `tab:drop-index`.
+ */
+function showTabHover(source: Shell, x: number, y: number): void {
+  const target = shellAtStrip(source, x, y)
+  clearTabHover(target)
+  if (!target || target.chrome.webContents.isDestroyed()) return
+
+  // Until the renderer answers with a slot, the end of the strip.
+  target.dropIndex ??= target.tabs.tabCount()
+  target.chrome.webContents.send('browser:tab-hover', x - target.window.getContentBounds().x)
+}
+
+/**
+ * Let go of a tab dragged out of its strip. Over another window's strip it
+ * joins that window at the marked slot; anywhere else it becomes a window of
+ * its own. Either way the page moves rather than reloading.
+ */
+function dropTab(source: Shell, id: number, x: number, y: number): boolean {
+  const target = shellAtStrip(source, x, y)
+  const index = target?.dropIndex ?? undefined
+  clearTabHover()
+
+  if (target) {
+    if (!source.tabs.moveTabTo(id, target.tabs, index)) return false
+    target.window.focus()
+    target.chrome.webContents.focus()
+    // Its last tab gone, the window it came from has nothing left to show.
+    if (source.tabs.tabCount() === 0) source.window.close()
+    return true
+  }
+
+  // A lone tab is already its own window; tearing it out would leave an empty one.
+  if (source.tabs.tabCount() < 2) return false
+
+  createWindow(undefined, { from: source, tabId: id, x, y })
+  return true
 }
 
 /**
@@ -662,14 +916,26 @@ function registerInternalIpc(): void {
   ipcMain.handle('internal:import-scan', fromInternalPage(() => scanForProfiles()))
   ipcMain.handle(
     'internal:import-run',
-    fromInternalPage((id: string, what: { bookmarks: boolean; history: boolean; searches: boolean }) => {
-      const payload = readProfile(id)
-      return importProfile({
-        bookmarks: what.bookmarks ? payload.bookmarks : [],
-        history: what.history ? payload.history : [],
-        searches: what.searches ? payload.searches : []
-      })
-    })
+    fromInternalPage(
+      async (
+        id: string,
+        what: { bookmarks: boolean; history: boolean; searches: boolean; cookies?: boolean }
+      ) => {
+        // Only a profile the scan found can be read: the path comes from there,
+        // never from whatever the page passes in.
+        if (!scanForProfiles().some((source) => source.id === id)) return null
+
+        const payload = readProfile(id)
+        const result = importProfile({
+          bookmarks: what.bookmarks ? payload.bookmarks : [],
+          history: what.history ? payload.history : [],
+          searches: what.searches ? payload.searches : []
+        })
+        if (what.cookies) result.cookies = await importFirefoxCookies(id, session.fromPartition(PARTITION))
+        bookmarksChanged()
+        return result
+      }
+    )
   )
   ipcMain.handle('internal:settings-get', fromInternalPage(() => getSettings()))
   ipcMain.handle(
@@ -772,9 +1038,51 @@ function registerInternalIpc(): void {
     'internal:bookmark-remove',
     fromInternalPage((url: string) => {
       removeBookmark(url)
-      pushStateEverywhere()
+      bookmarksChanged()
     })
   )
+  ipcMain.handle(
+    'internal:bookmark-update',
+    fromInternalPage((url: string, changes: { title?: string; folder?: string }) => {
+      updateBookmark(url, changes)
+      bookmarksChanged()
+    })
+  )
+  ipcMain.handle('internal:bookmark-folders', fromInternalPage(() => bookmarkFolders()))
+  ipcMain.handle(
+    'internal:folder-create',
+    fromInternalPage((path: string) => {
+      const made = createBookmarkFolder(path)
+      bookmarksChanged()
+      return made
+    })
+  )
+  ipcMain.handle(
+    'internal:folder-rename',
+    fromInternalPage((from: string, to: string) => {
+      renameBookmarkFolder(from, to)
+      bookmarksChanged()
+    })
+  )
+  ipcMain.handle(
+    'internal:folder-delete',
+    fromInternalPage((path: string, withBookmarks: boolean) => {
+      const count = deleteBookmarkFolder(path, withBookmarks)
+      bookmarksChanged()
+      return count
+    })
+  )
+  ipcMain.handle('internal:bookmarks-export', fromInternalPage(() => exportBookmarks()))
+  ipcMain.handle('internal:permissions', fromInternalPage(() => listSitePermissions()))
+  ipcMain.handle(
+    'internal:permission-forget',
+    fromInternalPage((origin: string, permission: string) => setSitePermission(origin, permission, null))
+  )
+  ipcMain.handle('internal:sidebar-close', (event: Electron.IpcMainInvokeEvent) => {
+    if (!isInternalUrl(event.senderFrame?.url)) return
+    const shell = shellOwningSidebar(event.sender.id)
+    if (shell) toggleSidebar(shell, false)
+  })
 
   ipcMain.handle('internal:update-lists', fromInternalPage(() => updateFilterLists()))
   ipcMain.handle('internal:lists-updated', fromInternalPage(() => listsUpdatedAt()))
@@ -792,14 +1100,28 @@ function registerInternalIpc(): void {
     'internal:forget-site',
     fromInternalPage((domain: string) => forgetSite(domain))
   )
-  ipcMain.handle('internal:open', (event: Electron.IpcMainInvokeEvent, url: string) => {
+  ipcMain.handle('internal:open', (event: Electron.IpcMainInvokeEvent, url: string, newTab?: boolean) => {
     if (!isInternalUrl(event.senderFrame?.url)) return
-    shellFor(event)?.tabs.navigate(url)
+    const shell = shellFor(event)
+    if (!shell) return
+    if (newTab) shell.tabs.createTab(normalizeInput(url))
+    else shell.tabs.navigate(url)
   })
 }
 
 function registerIpc(): void {
   registerInternalIpc()
+
+  registerPasswordIpc({
+    chromeFor: (tab) => shellOwningTab(tab.id)?.chrome.webContents ?? null,
+    activeTabFor: (chrome) => shells.get(chrome.id)?.tabs.activeWebContents() ?? null,
+    allChromes: () => [...shells.values()].map((shell) => shell.chrome.webContents)
+  })
+  registerVaultPageIpc((url) => isInternalUrl(url) && (url ?? '').startsWith(PASSWORDS_URL))
+  registerAudioFxIpc({
+    activeTabFor: (chrome) => shells.get(chrome.id)?.tabs.activeWebContents() ?? null,
+    chromeFor: (tab) => shellOwningTab(tab.id)?.chrome.webContents ?? null
+  })
 
   // Every handler below acts on the window that sent the call. Resolving the
   // window per call is what keeps a second window from hijacking the first.
@@ -815,7 +1137,18 @@ function registerIpc(): void {
   ipcMain.handle('tab:move', (e, id: number, toIndex: number) =>
     shellFor(e)?.tabs.moveTab(id, toIndex)
   )
-  ipcMain.handle('tab:detach', (e, id: number) => shellFor(e)?.tabs.detachTab(id) ?? false)
+  ipcMain.handle('tab:drag-hover', (e, x: number, y: number) => {
+    const shell = shellFor(e)
+    if (shell) showTabHover(shell, x, y)
+  })
+  ipcMain.handle('tab:drop-index', (e, index: number) => {
+    const shell = shells.get(e.sender.id)
+    if (shell) shell.dropIndex = index
+  })
+  ipcMain.handle('tab:drop', (e, id: number, x: number, y: number) => {
+    const shell = shellFor(e)
+    return shell ? dropTab(shell, id, x, y) : false
+  })
   ipcMain.handle('tab:closed-list', (e) => shellFor(e)?.tabs.closedTabs() ?? [])
   ipcMain.handle('tab:reopen', (e, id?: number) => shellFor(e)?.tabs.reopenClosed(id) ?? false)
   // --- pinning and groups ---------------------------------------------------
@@ -995,6 +1328,32 @@ function registerIpc(): void {
     }
   })
 
+  ipcMain.handle('bookmark:edit', (e) => {
+    const shell = shellFor(e)
+    return shell ? bookmarkActiveTab(shell) : null
+  })
+  ipcMain.handle('bookmark:save', (_e, url: string, changes: { title?: string; folder?: string }) => {
+    updateBookmark(url, changes)
+    bookmarksChanged()
+  })
+  ipcMain.handle('bookmark:remove', (_e, url: string) => {
+    removeBookmark(url)
+    bookmarksChanged()
+  })
+  ipcMain.handle('bookmark:folders', () => bookmarkFolders())
+  ipcMain.handle('net:public-ip', () => publicIp())
+  ipcMain.handle('permission:answer', (_e, id: number, allow: boolean, remember: boolean) =>
+    answerPermission(id, allow, remember)
+  )
+  ipcMain.handle('permission:pending', () => pendingPermissions())
+  ipcMain.handle('permission:site', (_e, origin: string) => listSitePermissions(origin))
+  ipcMain.handle('permission:set', (_e, origin: string, permission: string, allow: boolean | null) =>
+    setSitePermission(origin, permission, allow)
+  )
+  ipcMain.handle('sidebar:toggle', (e) => {
+    const shell = shellFor(e)
+    if (shell) toggleSidebar(shell)
+  })
   ipcMain.handle('bookmark:toggle', (e) => {
     const shell = shellFor(e)
     if (shell) toggleBookmarkForActiveTab(shell)
@@ -1099,6 +1458,13 @@ if (!app.requestSingleInstanceLock()) {
   app.exit(0)
 } else {
   app.on('second-instance', (_event, argv) => {
+    // An installed app's shortcut, clicked while the browser is open.
+    const single = appModeUrl(argv)
+    if (single) {
+      createAppWindow(single)
+      return
+    }
+
     const url = openableFromArgv(argv)
     const shell = focusedShell()
 
@@ -1121,23 +1487,28 @@ app.whenReady().then(() => {
   initDb()
   loadSettings()
   handleInternalProtocol(ALL_PARTITIONS)
-  lockDownSession()
-
-  // Installed web app? Open just that, and skip the browser chrome entirely.
-  const singleSite = appModeUrl(process.argv)
-  if (singleSite) {
-    createAppWindow(singleSite)
-    void initAdblock()
-    return
-  }
+  initPermissions((contents, request) => {
+    const shell = shellOwningTab(contents.id)
+    if (!shell || shell.chrome.webContents.isDestroyed()) return false
+    shell.chrome.webContents.send('browser:permission-request', request)
+    return true
+  })
 
   registerIpc()
   initDownloads(pushStateEverywhere)
 
-  // Opened by Windows with a link or a file? Start on that rather than the
-  // new tab page. This is what being the default browser actually means.
-  const opened = openableFromArgv(process.argv)
-  createWindow(opened ?? undefined)
+  // Installed web app? Open just that window. Everything else is still set up,
+  // because this process is now the browser too: opening IE2 while the app is
+  // running lands here, and has to get a working browser window.
+  const singleSite = appModeUrl(process.argv)
+  if (singleSite) {
+    createAppWindow(singleSite)
+  } else {
+    // Opened by Windows with a link or a file? Start on that rather than the
+    // new tab page. This is what being the default browser actually means.
+    const opened = openableFromArgv(process.argv)
+    createWindow(opened ?? undefined)
+  }
 
   // Filter lists load in the background; the window does not wait on them.
   void initAdblock().then(pushStateEverywhere)

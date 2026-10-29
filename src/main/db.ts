@@ -1,12 +1,14 @@
 import { DatabaseSync } from 'node:sqlite'
 import { app } from 'electron'
 import { join } from 'node:path'
-import type {
-  HistoryHit,
-  BookmarkEntry,
-  ImportPayload,
-  ImportResult,
-  RecallStats
+import {
+  BOOKMARKS_BAR,
+  type HistoryHit,
+  type BookmarkEntry,
+  type ImportPayload,
+  type ImportResult,
+  type RecallStats,
+  type SitePermission
 } from '../shared/types'
 
 let db: DatabaseSync
@@ -111,6 +113,15 @@ function migrate(): void {
     db.exec("ALTER TABLE bookmarks ADD COLUMN folder TEXT NOT NULL DEFAULT ''")
   }
 
+  // A folder only existed while something was filed in it; creating one ahead
+  // of filing anything needs somewhere to keep it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bookmark_folders (
+      path       TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL
+    )
+  `)
+
   // Pinning and grouping arrived after session_tabs existed, so a database from
   // an earlier build has neither column and every query naming them would fail.
   const session = db
@@ -131,7 +142,7 @@ function migrate(): void {
  * take the larger value and timestamps take the more recent one.
  */
 export function importProfile(payload: ImportPayload): ImportResult {
-  const result: ImportResult = { bookmarks: 0, history: 0, searches: 0, skipped: 0 }
+  const result: ImportResult = { bookmarks: 0, history: 0, searches: 0, skipped: 0, cookies: 0 }
 
   const insertPage = db.prepare(
     `INSERT INTO pages (url, title, visit_count, last_visit)
@@ -567,11 +578,145 @@ export function recallStats(): RecallStats {
 
 // Bookmarks
 
-export function addBookmark(url: string, title: string): void {
+export function addBookmark(url: string, title: string, folder = BOOKMARKS_BAR): void {
   db.prepare(
-    `INSERT INTO bookmarks (url, title, created_at) VALUES (?, ?, ?)
+    `INSERT INTO bookmarks (url, title, folder, created_at) VALUES (?, ?, ?, ?)
      ON CONFLICT(url) DO UPDATE SET title = excluded.title`
-  ).run(url, title, Date.now())
+  ).run(url, title, cleanFolder(folder), Date.now())
+}
+
+/** One bookmark, or null if the address is not saved. */
+export function getBookmark(url: string): BookmarkEntry | null {
+  const row = db
+    .prepare(
+      `SELECT b.url, b.title, b.created_at AS createdAt, COALESCE(b.folder, '') AS folder,
+              p.favicon AS favicon
+       FROM bookmarks b LEFT JOIN pages p ON p.url = b.url
+       WHERE b.url = ?`
+    )
+    .get(url) as unknown as BookmarkEntry | undefined
+  return row ?? null
+}
+
+export function updateBookmark(url: string, changes: { title?: string; folder?: string }): void {
+  if (changes.title !== undefined) {
+    db.prepare('UPDATE bookmarks SET title = ? WHERE url = ?').run(changes.title.slice(0, 500), url)
+  }
+  if (changes.folder !== undefined) {
+    // Filed into a folder, the folder now exists in its own right, so moving
+    // the bookmark out again later does not make the folder vanish with it.
+    const folder = createBookmarkFolder(changes.folder)
+    db.prepare('UPDATE bookmarks SET folder = ? WHERE url = ?').run(folder, url)
+  }
+}
+
+/** "a / b/ /c" becomes "a/b/c": no empty segments, no stray spaces. */
+function cleanFolder(path: string): string {
+  return String(path ?? '')
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('/')
+    .slice(0, 300)
+}
+
+/**
+ * Every folder that exists, whether something is filed in it or it was made
+ * empty, with the parents of nested folders listed too.
+ */
+export function bookmarkFolders(): string[] {
+  const used = db
+    .prepare("SELECT DISTINCT folder FROM bookmarks WHERE folder <> ''")
+    .all() as unknown as { folder: string }[]
+  const made = db.prepare('SELECT path FROM bookmark_folders').all() as unknown as { path: string }[]
+
+  const all = new Set<string>([BOOKMARKS_BAR])
+  for (const path of [...used.map((row) => row.folder), ...made.map((row) => row.path)]) {
+    const parts = path.split('/')
+    for (let i = 1; i <= parts.length; i++) all.add(parts.slice(0, i).join('/'))
+  }
+  return [...all].sort((a, b) => a.localeCompare(b))
+}
+
+export function createBookmarkFolder(path: string): string {
+  const clean = cleanFolder(path)
+  if (clean) {
+    db.prepare('INSERT OR IGNORE INTO bookmark_folders (path, created_at) VALUES (?, ?)').run(
+      clean,
+      Date.now()
+    )
+  }
+  return clean
+}
+
+/** Bookmarks and made folders at or under `path`. */
+function folderContents(path: string): { marks: { url: string; folder: string }[]; made: string[] } {
+  const marks = db
+    .prepare('SELECT url, folder FROM bookmarks WHERE folder = ? OR folder LIKE ?')
+    .all(path, `${path}/%`) as unknown as { url: string; folder: string }[]
+  const made = (
+    db
+      .prepare('SELECT path FROM bookmark_folders WHERE path = ? OR path LIKE ?')
+      .all(path, `${path}/%`) as unknown as { path: string }[]
+  ).map((row) => row.path)
+  return { marks, made }
+}
+
+/** Rename or move a folder, carrying everything inside it along. */
+export function renameBookmarkFolder(from: string, to: string): void {
+  const source = cleanFolder(from)
+  const target = cleanFolder(to)
+  if (!source || !target || source === target || target.startsWith(`${source}/`)) return
+
+  const moved = (path: string): string => `${target}${path.slice(source.length)}`
+  const { marks, made } = folderContents(source)
+
+  db.exec('BEGIN')
+  try {
+    const setFolder = db.prepare('UPDATE bookmarks SET folder = ? WHERE url = ?')
+    for (const mark of marks) setFolder.run(moved(mark.folder), mark.url)
+
+    db.prepare('DELETE FROM bookmark_folders WHERE path = ? OR path LIKE ?').run(source, `${source}/%`)
+    const insert = db.prepare('INSERT OR IGNORE INTO bookmark_folders (path, created_at) VALUES (?, ?)')
+    for (const path of [source, ...made]) insert.run(moved(path), Date.now())
+
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
+/**
+ * Remove a folder. Its bookmarks either go with it or move up into its parent,
+ * keeping any subfolders' shape — so tidying up never loses anything saved
+ * unless that was asked for.
+ */
+export function deleteBookmarkFolder(path: string, withBookmarks: boolean): number {
+  const source = cleanFolder(path)
+  if (!source) return 0
+
+  const parent = source.includes('/') ? source.slice(0, source.lastIndexOf('/')) : ''
+  const { marks } = folderContents(source)
+
+  db.exec('BEGIN')
+  try {
+    if (withBookmarks) {
+      db.prepare('DELETE FROM bookmarks WHERE folder = ? OR folder LIKE ?').run(source, `${source}/%`)
+    } else {
+      const setFolder = db.prepare('UPDATE bookmarks SET folder = ? WHERE url = ?')
+      for (const mark of marks) {
+        const rest = mark.folder.slice(source.length + 1)
+        setFolder.run([parent, rest].filter(Boolean).join('/'), mark.url)
+      }
+    }
+    db.prepare('DELETE FROM bookmark_folders WHERE path = ? OR path LIKE ?').run(source, `${source}/%`)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+  return marks.length
 }
 
 export function removeBookmark(url: string): void {
@@ -590,8 +735,10 @@ export function bookmarkCount(): number {
 export function listBookmarks(): BookmarkEntry[] {
   return db
     .prepare(
-      `SELECT url, title, created_at AS createdAt, COALESCE(folder, '') AS folder
-       FROM bookmarks ORDER BY created_at DESC`
+      `SELECT b.url, b.title, b.created_at AS createdAt, COALESCE(b.folder, '') AS folder,
+              p.favicon AS favicon
+       FROM bookmarks b LEFT JOIN pages p ON p.url = b.url
+       ORDER BY b.created_at DESC`
     )
     .all() as unknown as BookmarkEntry[]
 }
@@ -709,4 +856,208 @@ function toMatchQuery(input: string): string {
   if (tokens.length === 0) return ''
 
   return tokens.map((t, i) => (i === tokens.length - 1 ? `"${t}"*` : `"${t}"`)).join(' AND ')
+}
+
+// Site permissions
+
+
+function ensurePermissionsTable(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS site_permissions (
+      origin     TEXT NOT NULL,
+      permission TEXT NOT NULL,
+      allow      INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (origin, permission)
+    )
+  `)
+}
+
+export function sitePermission(origin: string, permission: string): boolean | null {
+  ensurePermissionsTable()
+  const row = db
+    .prepare('SELECT allow FROM site_permissions WHERE origin = ? AND permission = ?')
+    .get(origin, permission) as unknown as { allow: number } | undefined
+  return row ? row.allow === 1 : null
+}
+
+export function setSitePermission(origin: string, permission: string, allow: boolean | null): void {
+  ensurePermissionsTable()
+  if (allow === null) {
+    db.prepare('DELETE FROM site_permissions WHERE origin = ? AND permission = ?').run(origin, permission)
+    return
+  }
+  db.prepare(
+    `INSERT INTO site_permissions (origin, permission, allow, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(origin, permission) DO UPDATE SET allow = excluded.allow, updated_at = excluded.updated_at`
+  ).run(origin, permission, allow ? 1 : 0, Date.now())
+}
+
+export function listSitePermissions(origin?: string): SitePermission[] {
+  ensurePermissionsTable()
+  const rows = (
+    origin
+      ? db
+          .prepare('SELECT origin, permission, allow, updated_at FROM site_permissions WHERE origin = ?')
+          .all(origin)
+      : db.prepare('SELECT origin, permission, allow, updated_at FROM site_permissions ORDER BY origin').all()
+  ) as unknown as { origin: string; permission: string; allow: number; updated_at: number }[]
+  return rows.map((row) => ({
+    origin: row.origin,
+    permission: row.permission,
+    allow: row.allow === 1,
+    updatedAt: row.updated_at
+  }))
+}
+
+// Password vault — only ciphertext is stored; see vault.ts for the keys.
+
+function ensureVaultTables(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vault_meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS credentials (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      origin     TEXT NOT NULL,
+      blob       TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      last_used  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_credentials_origin ON credentials(origin);
+    CREATE TABLE IF NOT EXISTS password_never (
+      origin     TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL
+    );
+  `)
+}
+
+export function vaultMeta(key: string): string | null {
+  ensureVaultTables()
+  const row = db.prepare('SELECT value FROM vault_meta WHERE key = ?').get(key) as unknown as
+    | { value: string }
+    | undefined
+  return row?.value ?? null
+}
+
+export function setVaultMeta(key: string, value: string | null): void {
+  ensureVaultTables()
+  if (value === null) db.prepare('DELETE FROM vault_meta WHERE key = ?').run(key)
+  else db.prepare('INSERT INTO vault_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)
+}
+
+export interface CredentialRow {
+  id: number
+  origin: string
+  blob: string
+  createdAt: number
+  updatedAt: number
+  lastUsed: number
+}
+
+export function credentialRows(origin?: string): CredentialRow[] {
+  ensureVaultTables()
+  const sql = `SELECT id, origin, blob, created_at AS createdAt, updated_at AS updatedAt, last_used AS lastUsed
+               FROM credentials ${origin ? 'WHERE origin = ?' : ''} ORDER BY origin, id`
+  return (origin ? db.prepare(sql).all(origin) : db.prepare(sql).all()) as unknown as CredentialRow[]
+}
+
+export function credentialRow(id: number): CredentialRow | null {
+  ensureVaultTables()
+  const row = db
+    .prepare(
+      `SELECT id, origin, blob, created_at AS createdAt, updated_at AS updatedAt, last_used AS lastUsed
+       FROM credentials WHERE id = ?`
+    )
+    .get(id) as unknown as CredentialRow | undefined
+  return row ?? null
+}
+
+export function credentialCount(origin?: string): number {
+  ensureVaultTables()
+  const row = (
+    origin
+      ? db.prepare('SELECT COUNT(*) AS n FROM credentials WHERE origin = ?').get(origin)
+      : db.prepare('SELECT COUNT(*) AS n FROM credentials').get()
+  ) as unknown as { n: number }
+  return row.n
+}
+
+export function insertCredential(origin: string, blob: string): number {
+  ensureVaultTables()
+  const now = Date.now()
+  const result = db
+    .prepare('INSERT INTO credentials (origin, blob, created_at, updated_at) VALUES (?, ?, ?, ?)')
+    .run(origin, blob, now, now)
+  return Number(result.lastInsertRowid)
+}
+
+export function updateCredentialRow(id: number, origin: string, blob: string): void {
+  ensureVaultTables()
+  db.prepare('UPDATE credentials SET origin = ?, blob = ?, updated_at = ? WHERE id = ?').run(origin, blob, Date.now(), id)
+}
+
+export function touchCredential(id: number): void {
+  ensureVaultTables()
+  db.prepare('UPDATE credentials SET last_used = ? WHERE id = ?').run(Date.now(), id)
+}
+
+export function deleteCredentialRow(id: number): void {
+  ensureVaultTables()
+  db.prepare('DELETE FROM credentials WHERE id = ?').run(id)
+}
+
+/** Every saved login and the vault's key material: what "forgot my master password" means. */
+export function wipeVault(): void {
+  ensureVaultTables()
+  db.exec('DELETE FROM credentials; DELETE FROM vault_meta;')
+}
+
+/** Re-encrypt every row at once, or none of them. */
+export function replaceCredentialBlobs(rows: { id: number; blob: string }[], meta: Record<string, string>): void {
+  ensureVaultTables()
+  db.exec('BEGIN')
+  try {
+    const update = db.prepare('UPDATE credentials SET blob = ? WHERE id = ?')
+    for (const row of rows) update.run(row.blob, row.id)
+    for (const [key, value] of Object.entries(meta)) setVaultMeta(key, value)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
+export function neverSaveOrigins(): string[] {
+  ensureVaultTables()
+  return (db.prepare('SELECT origin FROM password_never ORDER BY origin').all() as unknown as { origin: string }[]).map(
+    (row) => row.origin
+  )
+}
+
+export function setNeverSave(origin: string, never: boolean): void {
+  ensureVaultTables()
+  if (never) db.prepare('INSERT OR IGNORE INTO password_never (origin, created_at) VALUES (?, ?)').run(origin, Date.now())
+  else db.prepare('DELETE FROM password_never WHERE origin = ?').run(origin)
+}
+
+// Audio effects remembered per site
+
+export function fxForSite(origin: string): string | null {
+  db.exec('CREATE TABLE IF NOT EXISTS fx_sites (origin TEXT PRIMARY KEY, settings TEXT NOT NULL)')
+  const row = db.prepare('SELECT settings FROM fx_sites WHERE origin = ?').get(origin) as unknown as
+    | { settings: string }
+    | undefined
+  return row?.settings ?? null
+}
+
+export function setFxForSite(origin: string, settings: string | null): void {
+  db.exec('CREATE TABLE IF NOT EXISTS fx_sites (origin TEXT PRIMARY KEY, settings TEXT NOT NULL)')
+  if (settings === null) db.prepare('DELETE FROM fx_sites WHERE origin = ?').run(origin)
+  else
+    db.prepare(
+      'INSERT INTO fx_sites (origin, settings) VALUES (?, ?) ON CONFLICT(origin) DO UPDATE SET settings = excluded.settings'
+    ).run(origin, settings)
 }

@@ -21,6 +21,7 @@
       <button id="reload" title="Reload"></button>
       <button id="home" title="Home"></button>
       <div id="omnibox-wrap">
+        <button id="site-perms" title="What this site may use" hidden></button>
         <span id="badge" hidden></span>
         <input
           id="omnibox"
@@ -30,6 +31,7 @@
           placeholder="Search the web — or anything you have already read"
         />
         <button id="install" title="Install this site as an app" hidden></button>
+        <button id="pw-key" title="Saved logins for this site" hidden></button>
         <button id="bookmark" title="Bookmark this page"></button>
       </div>
       <button id="copy-link" title="Copy this page's address"></button>
@@ -39,6 +41,10 @@
       <button id="split" title="Split view (Ctrl+Shift+E)"></button>
       <button id="qr" title="QR code for this page"></button>
       <button id="media" title="What is playing"></button>
+      <button id="mood" title="Mood"></button>
+      <button id="fx" title="Audio effects"></button>
+      <button id="ip" title="Public IP"></button>
+      <button id="passwords" title="Passwords"></button>
       <button id="bookmarks" title="Bookmarks"></button>
       <button id="downloads" title="Downloads">
         <span id="dl-count" hidden></span>
@@ -50,6 +56,174 @@
       <button id="settings" title="Settings"></button>
       <button id="help" title="What does any of this do?"></button>
     </div>
+
+    <!-- A site asking for the camera, location and so on. -->
+    <div id="perm-panel" hidden>
+      <div class="perm-head">
+        <span id="perm-icons"></span>
+        <span id="perm-text"></span>
+      </div>
+      <label class="perm-remember" id="perm-remember-row">
+        <input type="checkbox" id="perm-remember" checked />
+        <span>Remember for this site</span>
+      </label>
+      <div id="perm-amnesia" hidden>Amnesia tab: the answer is forgotten when IE2 closes.</div>
+      <div class="perm-actions">
+        <button id="perm-block">Block</button>
+        <button id="perm-allow" class="primary">Allow</button>
+      </div>
+    </div>
+
+    <!-- The password manager: offering to save a login, or filling one. -->
+    <div id="pw-panel" hidden>
+      <div class="panel-head">
+        <span id="pw-title"></span>
+      </div>
+      <div id="pw-body">
+        <div id="pw-who"></div>
+        <div id="pw-accounts"></div>
+        <div id="pw-master-row" hidden>
+          <div id="pw-master-hint"></div>
+          <input id="pw-master" type="password" autocomplete="off" placeholder="Master password" />
+          <input id="pw-master-again" type="password" autocomplete="off" placeholder="The same again" hidden />
+          <div id="pw-error"></div>
+        </div>
+      </div>
+      <div class="pw-actions">
+        <button id="pw-never">Never for this site</button>
+        <button id="pw-manage">Manage passwords</button>
+        <span class="spacer"></span>
+        <button id="pw-later">Not now</button>
+        <button id="pw-go" class="primary"></button>
+      </div>
+    </div>
+
+    <!-- What the site in front is allowed to use, and a way to change it. -->
+    <div id="site-panel" hidden>
+      <div class="panel-head">
+        <span id="site-origin"></span>
+      </div>
+      <div id="site-list"></div>
+    </div>
+
+    <!-- Quick browse: the Bookmarks bar folder, one click from anywhere. -->
+    <div id="bookmarks-bar" hidden></div>
+
+    <!-- The address the internet sees. Masked until clicked, every time. -->
+    <div id="ip-panel" hidden>
+      <div class="panel-head">
+        <span>Public IP</span>
+        <button id="ip-refresh">Check again</button>
+      </div>
+      <button id="ip-reveal" class="masked">
+        <span class="ip-row"><span class="fam">IPv4</span><span id="ip-v4" class="addr"></span></span>
+        <span class="ip-row"><span class="fam">IPv6</span><span id="ip-v6" class="addr"></span></span>
+        <span id="ip-hint">Click to reveal</span>
+      </button>
+      <div class="ip-foot">
+        <span id="ip-when"></span>
+        <button id="ip-copy">Copy</button>
+      </div>
+      <div id="ip-note">
+        The address websites see. If it is your VPN's, this browser's traffic goes through it —
+        though an address alone cannot prove nothing else leaks. Asked from api.ipify.org, only
+        when you open this.
+      </div>
+    </div>
+
+    <!-- Audio effects for what this tab is playing: slowed, reverb, nightcore. -->
+    <div id="fx-panel" hidden>
+      <div class="panel-head">
+        <span>Audio effects</span>
+        <span id="fx-site"></span>
+      </div>
+      <div id="fx-presets"></div>
+      <div id="fx-name-row" hidden>
+        <input id="fx-name" type="text" maxlength="30" spellcheck="false" placeholder="Preset name" />
+        <button id="fx-name-save" class="primary">Save</button>
+      </div>
+      <div class="fx-slider">
+        <label for="fx-speed"><span>Speed</span><b id="fx-speed-v"></b></label>
+        <input id="fx-speed" type="range" min="0.5" max="1.5" step="0.01" />
+      </div>
+      <div class="fx-slider">
+        <label for="fx-reverb"><span>Reverb</span><b id="fx-reverb-v"></b></label>
+        <input id="fx-reverb" type="range" min="0" max="1" step="0.01" />
+      </div>
+      <div class="fx-slider">
+        <label for="fx-room"><span>Room size</span><b id="fx-room-v"></b></label>
+        <input id="fx-room" type="range" min="0" max="1" step="0.01" />
+      </div>
+      <div class="fx-slider">
+        <label for="fx-bass"><span>Bass boost</span><b id="fx-bass-v"></b></label>
+        <input id="fx-bass" type="range" min="0" max="1" step="0.01" />
+      </div>
+      <label class="fx-check"><input type="checkbox" id="fx-pitch" /> Keep original pitch</label>
+      <label class="fx-check"><input type="checkbox" id="fx-remember" /> Remember for this site</label>
+      <div id="fx-status"></div>
+      <div class="fx-actions">
+        <button id="fx-save">Save as preset</button>
+        <span class="spacer"></span>
+        <button id="fx-reset">Reset</button>
+      </div>
+    </div>
+
+    <!-- Mood: a mixer of rain, wind and thunder. Keeps playing when closed. -->
+    <div id="mood-panel" hidden>
+      <div class="panel-head">
+        <span>Mood</span>
+        <select id="mood-preset"></select>
+      </div>
+      <div id="mood-mixer"></div>
+      <div class="mood-controls">
+        <button id="mood-play" class="primary">Play</button>
+        <button id="mood-animate" aria-pressed="false" title="Let the mix drift slowly on its own">Animate</button>
+        <button id="mood-thunder">Thunder now</button>
+      </div>
+      <div class="mood-row">
+        <label>Volume <input id="mood-master" type="range" min="0" max="1" step="0.01" /></label>
+        <label>Thunder <input id="mood-rate" type="range" min="0" max="1" step="0.01" title="How often thunder rolls" /></label>
+      </div>
+      <div class="mood-row">
+        <label>Sleep timer
+          <select id="mood-timer">
+            <option value="0">Off</option>
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+            <option value="60">1 hour</option>
+            <option value="90">1½ hours</option>
+          </select>
+        </label>
+        <span id="mood-timer-left"></span>
+      </div>
+    </div>
+
+    <!-- The star's editor: where the page was saved, and a chance to change it. -->
+    <div id="bm-edit-panel" hidden>
+      <div class="panel-head">
+        <span id="bm-edit-heading"></span>
+      </div>
+      <label class="bm-field">
+        <span>Name</span>
+        <input id="bm-edit-title" type="text" spellcheck="false" maxlength="500" />
+      </label>
+      <label class="bm-field">
+        <span>Folder</span>
+        <select id="bm-edit-folder"></select>
+      </label>
+      <label class="bm-field" id="bm-new-folder-row" hidden>
+        <span>New folder</span>
+        <input id="bm-new-folder" type="text" spellcheck="false" maxlength="80" placeholder="Folder name" />
+      </label>
+      <div class="bm-edit-actions">
+        <button id="bm-edit-remove">Remove</button>
+        <button id="bm-edit-all">All bookmarks</button>
+        <button id="bm-edit-done" class="primary">Done</button>
+      </div>
+    </div>
+
+    <!-- A folder on the bookmarks bar, opened. -->
+    <div id="bar-folder-panel" hidden></div>
 
     <div id="dropdown" hidden>
       <div id="suggestions"></div>
@@ -88,6 +262,13 @@
       <button id="find-prev" title="Previous match (Shift+Enter)"></button>
       <button id="find-next" title="Next match (Enter)"></button>
       <button id="find-close" title="Close (Esc)"></button>
+    </div>
+
+    <!-- What a toolbar tool is for, and why it cannot be used just now. -->
+    <div id="tip" role="tooltip" hidden>
+      <div id="tip-name"></div>
+      <div id="tip-purpose"></div>
+      <div id="tip-reason"></div>
     </div>
 
     <!-- Brief confirmations: copied, saved, nothing to float. -->
@@ -136,13 +317,6 @@
       <div id="media-empty" hidden></div>
     </div>
 
-    <div id="bookmarks-panel" hidden>
-      <div class="panel-head">
-        <span>Bookmarks</span>
-        <button id="bm-manage">Manage all</button>
-      </div>
-      <div id="bm-list"></div>
-    </div>
 
     <div id="shot-panel" hidden>
       <div class="panel-head">

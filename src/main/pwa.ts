@@ -116,11 +116,7 @@ export async function installApp(entry: InstallableApp): Promise<string> {
     await writeFile(iconPath, ico)
   }
 
-  // In development the executable is Electron itself, so the app directory has
-  // to be passed along or the shortcut would launch a bare Electron.
-  const args = app.isPackaged
-    ? `--app="${entry.startUrl}"`
-    : `"${app.getAppPath()}" --app="${entry.startUrl}"`
+  const args = appLaunchArgs(entry.startUrl)
 
   const shortcut = join(app.getPath('desktop'), `${sanitiseFilename(entry.name)}.lnk`)
 
@@ -140,6 +136,15 @@ export async function installApp(entry: InstallableApp): Promise<string> {
 
 export function appSlug(origin: string): string {
   return origin.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+}
+
+/**
+ * What the shortcut passes to the executable. In development the executable is
+ * Electron itself, so the app directory has to be passed along or the shortcut
+ * would launch a bare Electron.
+ */
+export function appLaunchArgs(startUrl: string): string {
+  return app.isPackaged ? `--app="${startUrl}"` : `"${app.getAppPath()}" --app="${startUrl}"`
 }
 
 /** Stable per-site identity, so Windows treats each installed app separately. */
