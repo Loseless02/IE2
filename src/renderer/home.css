@@ -461,7 +461,7 @@ body.glass #recall-input {
   z-index: 5;
   display: flex;
   flex-direction: column;
-  width: 300px;
+  width: 320px;
   max-height: calc(100vh - 80px);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -510,6 +510,7 @@ body.glass #recall-input {
 
 .sheet-body {
   padding: 12px 14px 16px;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -609,6 +610,24 @@ body.glass #recall-input {
 .segmented button.on {
   background: var(--accent);
   color: #fff;
+}
+
+/* Five choices do not fit beside their label in a sheet this narrow, and
+   pushed the whole sheet into scrolling sideways. They go underneath instead,
+   sharing the width. */
+.field:has(> .segmented) {
+  display: block;
+  padding: 4px 0;
+}
+
+.field:has(> .segmented) > span {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.field > .segmented button {
+  flex: 1;
+  white-space: nowrap;
 }
 
 .check {

@@ -42,6 +42,8 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
           internal: resolve(__dirname, 'src/preload/internal.ts'),
+          // The title bar of an installed web app.
+          appbar: resolve(__dirname, 'src/preload/appbar.ts'),
           // Runs in every page, before the page's own scripts.
           adblock: resolve(__dirname, 'src/preload/adblock.ts')
         },
@@ -63,7 +65,8 @@ export default defineConfig({
           bookmarks: resolve(__dirname, 'src/renderer/bookmarks.html'),
           history: resolve(__dirname, 'src/renderer/history.html'),
           reader: resolve(__dirname, 'src/renderer/reader.html'),
-          passwords: resolve(__dirname, 'src/renderer/passwords.html')
+          passwords: resolve(__dirname, 'src/renderer/passwords.html'),
+          appbar: resolve(__dirname, 'src/renderer/appbar.html')
         }
       }
     }

@@ -333,3 +333,58 @@ export function themesByMode(): { dark: [string, Theme][]; light: [string, Theme
     light: entries.filter(([, t]) => t.mode === 'light')
   }
 }
+
+/** A theme built in Settings: any colour left empty comes from the base theme. */
+export interface CustomTheme {
+  /** The theme it starts from. */
+  base: string
+  bg: string
+  bgElevated: string
+  bgHover: string
+  border: string
+  text: string
+  textDim: string
+  mark: string
+}
+
+export const CUSTOM_THEME_ID = 'custom'
+
+/** The colours a custom theme can set, in the order Settings shows them. */
+export const CUSTOM_THEME_FIELDS: [keyof Omit<CustomTheme, 'base'>, string, string][] = [
+  ['bg', 'Background', 'The page behind everything, the tab strip and toolbar.'],
+  ['bgElevated', 'Surfaces', 'Panels, popovers, cards and tabs.'],
+  ['bgHover', 'Hover', 'A tab or card under the pointer.'],
+  ['border', 'Lines', 'Borders, dividers, and the toolbar band.'],
+  ['text', 'Text', 'Everything you read.'],
+  ['textDim', 'Quiet text', 'Descriptions, hints and secondary labels.'],
+  ['mark', 'Search highlight', 'The words that matched, in suggestions and results.']
+]
+
+const isHex = (value: unknown): value is string => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
+
+/** Perceived brightness, 0 to 1, of a #rrggbb colour. */
+function brightness(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/**
+ * The theme to paint with: a built-in one by id, or the custom one laid over
+ * its base. Whether a custom theme counts as dark or light follows from its
+ * background, so hover washes go the right way.
+ */
+export function resolveTheme(id: string, custom?: Partial<CustomTheme> | null): Theme {
+  if (id !== CUSTOM_THEME_ID) return themeById(id)
+
+  const base = themeById(custom?.base || DEFAULT_THEME)
+  const colours = { ...base.colours }
+  for (const [key] of CUSTOM_THEME_FIELDS) {
+    const value = custom?.[key]
+    if (isHex(value)) colours[key] = value
+  }
+
+  const mode = brightness(colours.bg) < 0.5 ? 'dark' : 'light'
+  colours.hover = mode === 'dark' ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.08)'
+  colours.overlay = mode === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)'
+  return { name: 'Custom', mode, colours }
+}

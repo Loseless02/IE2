@@ -147,3 +147,36 @@ section:nth-of-type(2) { animation-delay: 40ms; }
 section:nth-of-type(3) { animation-delay: 80ms; }
 section:nth-of-type(4) { animation-delay: 120ms; }
 section:nth-of-type(n + 5) { animation-delay: 160ms; }
+
+/* --- contents ----------------------------------------------------------------- */
+
+.toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -8px 0 36px;
+}
+
+.toc a {
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  text-decoration: none;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.toc a:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+section[id] {
+  scroll-margin-top: 20px;
+}
+
+/* A note under a table sits apart from it, at reading width. */
+table.ref + .prose {
+  margin-top: 14px;
+}

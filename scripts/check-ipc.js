@@ -37,7 +37,8 @@ const preloads = [
   'src/preload/internal.ts',
   'src/preload/adblock.ts',
   'src/preload/passwords.ts',
-  'src/preload/audiofx.ts'
+  'src/preload/audiofx.ts',
+  'src/preload/appbar.ts'
 ]
 
 const wanted = new Set()

@@ -3,7 +3,6 @@ import { APP_USER_MODEL_ID } from './profile'
 import {
   app,
   BaseWindow,
-  BrowserWindow,
   Menu,
   clipboard,
   dialog,
@@ -53,7 +52,7 @@ import { existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { showTabMenu } from './menus'
 import { exportBookmarks } from './bookmark-export'
-import { normalizeInput } from './url'
+import { isAllowedUrl, normalizeInput } from './url'
 import { publicIp } from './publicip'
 import { registerPasswordIpc, registerVaultPageIpc } from './passwords'
 import { registerAudioFxIpc } from './audiofx'
@@ -83,7 +82,7 @@ import {
   onUpdateState,
   updateState
 } from './updater'
-import { themeById } from '../shared/themes'
+import { resolveTheme } from '../shared/themes'
 import type { TabGroupColour } from '../shared/groups'
 import type { Settings } from '../shared/settings'
 import {
@@ -140,6 +139,8 @@ interface Shell {
   dropdownHeight: number
   /** The bookmarks sidebar docked on the right, while it is open. */
   sidebar: WebContentsView | null
+  /** Chrome height at the last layout, to notice the bookmarks bar coming or going. */
+  lastTop: number
   /**
    * Where a tab dragged in from another window would land in this strip, as
    * last reported by this window's renderer, or null when nothing is hovering.
@@ -220,7 +221,7 @@ function focusedShell(): Shell | undefined {
  */
 function overlayColours(): { color: string; symbolColor: string; height: number } {
   const settings = getSettings()
-  const { colours } = themeById(settings.theme)
+  const { colours } = resolveTheme(settings.theme, settings.customTheme)
 
   return {
     color: colours.bg,
@@ -231,11 +232,15 @@ function overlayColours(): { color: string; symbolColor: string; height: number 
 
 /** Repaint the native buttons after the theme changes. */
 function applyOverlay(): void {
-  for (const shell of shells.values()) {
-    // Only Windows draws this overlay; elsewhere the call is not available.
-    if (process.platform !== 'win32') return
+  // Only Windows draws this overlay; elsewhere the call is not available.
+  if (process.platform !== 'win32') return
+  const windows = [
+    ...[...shells.values()].map((shell) => ({ window: shell.window, height: TITLEBAR_HEIGHT })),
+    ...[...appShells.values()].map((app) => ({ window: app.window, height: APP_BAR_HEIGHT }))
+  ]
+  for (const { window, height } of windows) {
     try {
-      shell.window.setTitleBarOverlay(overlayColours())
+      window.setTitleBarOverlay({ ...overlayColours(), height })
     } catch {
       // A window closing mid-broadcast is not worth reporting.
     }
@@ -253,7 +258,7 @@ function createWindow(startUrl?: string, torn?: TornTab): void {
     minWidth: 520,
     minHeight: 400,
     title: 'IE2',
-    backgroundColor: themeById(getSettings().theme).colours.bg,
+    backgroundColor: resolveTheme(getSettings().theme, getSettings().customTheme).colours.bg,
     // No OS title bar and no menu bar: the tab strip *is* the title bar, with
     // the native window buttons overlaid on the right of it. Keeping them
     // native preserves Windows 11 snap layouts on hover.
@@ -283,12 +288,19 @@ function createWindow(startUrl?: string, torn?: TornTab): void {
     chrome: chromeView,
     dropdownHeight: 0,
     dropIndex: null,
-    sidebar: null
+    sidebar: null,
+    lastTop: 0
   } as Shell
 
   shell.tabs = new TabManager(
     win,
     (state) => {
+      // "Only on the new tab page": the bar comes and goes as tabs change.
+      const top = chromeTop(shell)
+      if (top !== shell.lastTop) {
+        shell.lastTop = top
+        layoutShell(shell)
+      }
       if (!chromeView.webContents.isDestroyed()) {
         chromeView.webContents.send('browser:state', withAdblock(shell, state))
       }
@@ -401,12 +413,56 @@ function appModeUrl(argv: string[]): string | null {
   }
 }
 
+/** An installed web app's window: a slim title bar over one site. */
+interface AppShell {
+  window: BaseWindow
+  bar: WebContentsView
+  page: WebContentsView
+  host: string
+  /** How far the bar is grown over the page, for its panel. */
+  barExtra: number
+}
+
+/** Height of an installed app's title bar. */
+const APP_BAR_HEIGHT = 36
+
 /** Open installed-app windows, one per site, so a second launch focuses it. */
-const appWindows = new Map<string, BrowserWindow>()
+const appShells = new Map<string, AppShell>()
+
+function appShellForBar(id: number): AppShell | undefined {
+  for (const app of appShells.values()) if (app.bar.webContents.id === id) return app
+  return undefined
+}
+
+function appShellForPage(id: number): AppShell | undefined {
+  for (const app of appShells.values()) if (app.page.webContents.id === id) return app
+  return undefined
+}
+
+function layoutApp(app: AppShell): void {
+  const { width, height } = app.window.getContentBounds()
+  app.page.setBounds({ x: 0, y: APP_BAR_HEIGHT, width, height: Math.max(0, height - APP_BAR_HEIGHT) })
+  app.bar.setBounds({ x: 0, y: 0, width, height: Math.min(height, APP_BAR_HEIGHT + app.barExtra) })
+}
+
+function appBarState(app: AppShell, favicon: string | null): void {
+  const wc = app.page.webContents
+  if (app.bar.webContents.isDestroyed() || wc.isDestroyed()) return
+  app.bar.webContents.send('appbar:state', {
+    title: wc.getTitle() || app.host,
+    url: wc.getURL(),
+    favicon,
+    canGoBack: wc.navigationHistory.canGoBack(),
+    canGoForward: wc.navigationHistory.canGoForward(),
+    loading: wc.isLoading()
+  })
+}
 
 /**
  * An installed web app: its own window, its own taskbar button and icon, no
- * tabs and no address bar — whether or not the browser is already open.
+ * tabs and no address bar — whether or not the browser is already open. A
+ * slim title bar carries back, reload and the audio effects, the browser tools
+ * that make sense for one site.
  *
  * The identity is set on the window, not the process. Setting it process-wide
  * (as this once did) renamed the browser too, and a launch while the browser
@@ -416,28 +472,26 @@ const appWindows = new Map<string, BrowserWindow>()
 function createAppWindow(url: string): void {
   const host = new URL(url).hostname
 
-  const open = appWindows.get(host)
-  if (open && !open.isDestroyed()) {
-    if (open.isMinimized()) open.restore()
-    open.focus()
+  const existing = appShells.get(host)
+  if (existing && !existing.window.isDestroyed()) {
+    if (existing.window.isMinimized()) existing.window.restore()
+    existing.window.focus()
     return
   }
 
   const icon = appIconPath(host)
+  const theme = resolveTheme(getSettings().theme, getSettings().customTheme)
 
-  const win = new BrowserWindow({
+  const win = new BaseWindow({
     width: 1100,
     height: 780,
+    minWidth: 420,
+    minHeight: 300,
     title: host,
     ...(existsSync(icon) ? { icon } : {}),
-    backgroundColor: '#1b1d21',
-    autoHideMenuBar: true,
-    webPreferences: {
-      partition: PARTITION,
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false
-    }
+    backgroundColor: theme.colours.bg,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { ...overlayColours(), height: APP_BAR_HEIGHT }
   })
 
   // Its own taskbar button and icon, and pinning it pins the app, not IE2.
@@ -450,15 +504,132 @@ function createAppWindow(url: string): void {
     })
   }
 
-  appWindows.set(host, win)
-  win.on('closed', () => appWindows.delete(host))
+  // The site itself, with the same page-side helpers as a tab — the password
+  // manager and the audio effects both work in here.
+  const page = new WebContentsView({
+    webPreferences: {
+      partition: PARTITION,
+      preload: join(__dirname, '../preload/internal.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      plugins: true
+    }
+  })
 
-  win.loadURL(url)
+  const bar = new WebContentsView({
+    webPreferences: {
+      preload: join(__dirname, '../preload/appbar.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+  bar.setBackgroundColor('#00000000')
 
-  // Links that leave the app's own origin belong in a real browser window.
-  win.webContents.setWindowOpenHandler(({ url: target }) => {
-    shell.openExternal(target)
+  win.contentView.addChildView(page)
+  win.contentView.addChildView(bar)
+
+  const app: AppShell = { window: win, bar, page, host, barExtra: 0 }
+  appShells.set(host, app)
+  layoutApp(app)
+  win.on('resize', () => layoutApp(app))
+
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    void bar.webContents.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/appbar.html`)
+  } else {
+    void bar.webContents.loadFile(join(__dirname, '../renderer/appbar.html'))
+  }
+
+  let favicon: string | null = null
+  const wc = page.webContents
+  const update = (): void => appBarState(app, favicon)
+  bar.webContents.on('did-finish-load', update)
+  for (const event of ['did-navigate', 'did-navigate-in-page', 'did-start-loading', 'did-stop-loading'] as const) {
+    wc.on(event as 'did-start-loading', update)
+  }
+  wc.on('page-title-updated', (_event, title) => {
+    win.setTitle(title || host)
+    update()
+  })
+  wc.on('page-favicon-updated', (_event, icons) => {
+    favicon = icons[0] ?? null
+    update()
+  })
+
+  // The keys a browser has, in a window that has no toolbar to hold them.
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const mod = input.control || input.meta
+    const key = input.key.toLowerCase()
+    if (mod && key === 'r') wc.reload()
+    else if (mod && key === 'w') win.close()
+    else if (input.alt && input.key === 'ArrowLeft') wc.navigationHistory.goBack()
+    else if (input.alt && input.key === 'ArrowRight') wc.navigationHistory.goForward()
+    else if (input.key === 'F12') wc.toggleDevTools()
+    else return
+    event.preventDefault()
+  })
+
+  // Links to other sites open in the browser, which is where browsing happens.
+  wc.setWindowOpenHandler(({ url: target }) => {
+    openInBrowser(target)
     return { action: 'deny' }
+  })
+  wc.on('will-navigate', (event, target) => {
+    if (!isAllowedUrl(target)) {
+      event.preventDefault()
+      shell.openExternal(target)
+    }
+  })
+
+  win.on('closed', () => {
+    appShells.delete(host)
+    for (const view of [page, bar]) if (!view.webContents.isDestroyed()) view.webContents.close()
+  })
+
+  void wc.loadURL(url)
+}
+
+/** A URL into the browser: a tab in the open window, or a window of its own. */
+function openInBrowser(url: string): void {
+  if (!isAllowedUrl(url)) return
+  const target = focusedShell()
+  if (!target) {
+    createWindow(url)
+    return
+  }
+  target.tabs.createTab(url)
+  if (target.window.isMinimized()) target.window.restore()
+  target.window.focus()
+}
+
+function registerAppBarIpc(): void {
+  const appFor = (event: Electron.IpcMainInvokeEvent): AppShell | undefined => appShellForBar(event.sender.id)
+
+  ipcMain.handle('appbar:state', (event) => {
+    const app = appFor(event)
+    if (app) appBarState(app, null)
+  })
+  ipcMain.handle('appbar:back', (event) => appFor(event)?.page.webContents.navigationHistory.goBack())
+  ipcMain.handle('appbar:forward', (event) => appFor(event)?.page.webContents.navigationHistory.goForward())
+  ipcMain.handle('appbar:reload', (event) => {
+    const wc = appFor(event)?.page.webContents
+    if (!wc) return
+    if (wc.isLoading()) wc.stop()
+    else wc.reload()
+  })
+  ipcMain.handle('appbar:open-in-browser', (event) => {
+    const app = appFor(event)
+    if (app) openInBrowser(app.page.webContents.getURL())
+  })
+  ipcMain.handle('appbar:height', (event, extra: number) => {
+    const app = appFor(event)
+    if (!app) return
+    const next = Math.max(0, Math.min(Math.round(Number(extra) || 0), 600))
+    if (next === app.barExtra) return
+    app.barExtra = next
+    layoutApp(app)
   })
 }
 
@@ -630,7 +801,7 @@ function toggleSidebar(shell: Shell, open = !shell.sidebar): void {
         nodeIntegration: false
       }
     })
-    view.setBackgroundColor(themeById(getSettings().theme).colours.bg)
+    view.setBackgroundColor(resolveTheme(getSettings().theme, getSettings().customTheme).colours.bg)
 
     // It only ever shows the bookmarks page; anything else is refused.
     view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -704,6 +875,10 @@ function broadcastSettings(next: Settings): Settings {
       shell.chrome.webContents.send('browser:settings', next)
     }
   }
+  // Installed apps' title bars follow the theme too.
+  for (const app of appShells.values()) {
+    if (!app.bar.webContents.isDestroyed()) app.bar.webContents.send('browser:settings', next)
+  }
   // The window buttons belong to Windows and do not hear about our themes.
   applyOverlay()
   return next
@@ -722,7 +897,8 @@ function withAdblock(shell: Shell, state: TabsState): BrowserState {
     messages: messagesFor(getSettings().language),
     downloads: listDownloads(),
     settings: getSettings(),
-    sidebarOpen: shell.sidebar !== null
+    sidebarOpen: shell.sidebar !== null,
+    bookmarksBarShown: barShown(shell)
   }
 }
 
@@ -735,14 +911,24 @@ function raiseChrome(shell: Shell): void {
   shell.window.contentView.addChildView(shell.chrome)
 }
 
+/** Whether this window shows the bookmarks bar right now. */
+function barShown(shell: Shell): boolean {
+  const mode = getSettings().bookmarksBar
+  if (mode === 'always') return true
+  if (mode === 'never') return false
+  // Only on the new tab page — which is also what a tab shows while it starts.
+  const url = shell.tabs.activeUrl().replace(/\/$/, '')
+  return !url || url === 'about:blank' || url === HOME_URL
+}
+
 /** Toolbar and tab strip, plus the bookmarks bar when it is shown. */
-function chromeTop(): number {
-  return CHROME_HEIGHT + (getSettings().showBookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0)
+function chromeTop(shell: Shell): number {
+  return CHROME_HEIGHT + (barShown(shell) ? BOOKMARKS_BAR_HEIGHT : 0)
 }
 
 function layoutChrome(shell: Shell): void {
   const { width, height } = shell.window.getContentBounds()
-  const wanted = chromeTop() + shell.dropdownHeight
+  const wanted = chromeTop(shell) + shell.dropdownHeight
   shell.chrome.setBounds({ x: 0, y: 0, width, height: Math.min(wanted, height) })
 }
 
@@ -751,7 +937,7 @@ function layoutShell(shell: Shell): void {
   layoutChrome(shell)
 
   const { width, height } = shell.window.getContentBounds()
-  const top = chromeTop()
+  const top = chromeTop(shell)
   shell.sidebar?.setBounds({
     x: Math.max(0, width - SIDEBAR_WIDTH),
     y: top,
@@ -1118,10 +1304,14 @@ function registerIpc(): void {
     allChromes: () => [...shells.values()].map((shell) => shell.chrome.webContents)
   })
   registerVaultPageIpc((url) => isInternalUrl(url) && (url ?? '').startsWith(PASSWORDS_URL))
+  // An installed app's title bar works the effects for its one page.
   registerAudioFxIpc({
-    activeTabFor: (chrome) => shells.get(chrome.id)?.tabs.activeWebContents() ?? null,
-    chromeFor: (tab) => shellOwningTab(tab.id)?.chrome.webContents ?? null
+    activeTabFor: (chrome) =>
+      shells.get(chrome.id)?.tabs.activeWebContents() ?? appShellForBar(chrome.id)?.page.webContents ?? null,
+    chromeFor: (tab) =>
+      shellOwningTab(tab.id)?.chrome.webContents ?? appShellForPage(tab.id)?.bar.webContents ?? null
   })
+  registerAppBarIpc()
 
   // Every handler below acts on the window that sent the call. Resolving the
   // window per call is what keeps a second window from hijacking the first.

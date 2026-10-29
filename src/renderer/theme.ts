@@ -1,4 +1,4 @@
-import { themeById } from '../shared/themes'
+import { resolveTheme } from '../shared/themes'
 import { toHex, type Settings } from '../shared/settings'
 
 /**
@@ -10,9 +10,9 @@ import { toHex, type Settings } from '../shared/settings'
  * clearing it falls back to whatever the theme itself prefers.
  */
 export function applyTheme(
-  settings: Pick<Settings, 'theme' | 'accent'> & { animations?: boolean }
+  settings: Pick<Settings, 'theme' | 'accent'> & { animations?: boolean; customTheme?: Settings['customTheme'] }
 ): void {
-  const theme = themeById(settings.theme)
+  const theme = resolveTheme(settings.theme, settings.customTheme)
   const root = document.documentElement
   const c = theme.colours
 

@@ -1,4 +1,5 @@
 import type { AudioFxPreset } from './audiofx'
+import type { CustomTheme } from './themes'
 
 /** Search engines the omnibox can hand a query to. */
 export const SEARCH_ENGINES = {
@@ -96,8 +97,10 @@ export interface Settings {
   language: string
 
   // Appearance
-  /** Interface theme id; see shared/themes.ts. */
+  /** Interface theme id; see shared/themes.ts. 'custom' uses customTheme. */
   theme: string
+  /** The colours of the custom theme, over its base theme. */
+  customTheme: CustomTheme
   /** Accent override. Empty means "whatever the theme prefers". */
   accent: string
   savedAccents: string[]
@@ -120,8 +123,11 @@ export interface Settings {
   audioPresets: AudioFxPreset[]
   showCompatButton: boolean
   showAmnesiaButton: boolean
-  /** The row of bookmarks under the toolbar, for getting to them in one click. */
-  showBookmarksBar: boolean
+  /**
+   * The row of bookmarks under the toolbar: always there, only on the new tab
+   * page (the way Chrome does it by default), or never.
+   */
+  bookmarksBar: 'always' | 'newtab' | 'never'
   /**
    * The order the user dragged the toolbar tools into, as button ids. Empty
    * means the built-in order; ids missing from it keep their built-in place.
@@ -210,6 +216,16 @@ export const DEFAULT_SETTINGS: Settings = {
 
   language: 'en',
   theme: 'ie2-dark',
+  customTheme: {
+    base: 'ie2-dark',
+    bg: '',
+    bgElevated: '',
+    bgHover: '',
+    border: '',
+    text: '',
+    textDim: '',
+    mark: ''
+  },
   accent: '',
   savedAccents: [],
   tabWidth: 'comfortable',
@@ -230,7 +246,7 @@ export const DEFAULT_SETTINGS: Settings = {
   audioPresets: [],
   showCompatButton: true,
   showAmnesiaButton: true,
-  showBookmarksBar: true,
+  bookmarksBar: 'always',
   toolbarOrder: [],
   animations: true,
   stylePageScrollbars: true,

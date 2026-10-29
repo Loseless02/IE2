@@ -6,7 +6,13 @@ import {
   type Settings
 } from '../shared/settings'
 import { contrastOn, createColourPicker } from './colour'
-import { themesByMode } from '../shared/themes'
+import {
+  CUSTOM_THEME_FIELDS,
+  CUSTOM_THEME_ID,
+  resolveTheme,
+  themeById,
+  themesByMode
+} from '../shared/themes'
 import { BUILT_IN_WALLPAPERS } from '../shared/wallpapers'
 
 import { applyTheme } from './theme'
@@ -639,7 +645,7 @@ function versionLabel(): HTMLElement {
   return wrap
 }
 
-function slider(key: keyof Settings, min: number, max: number, step: number): HTMLElement {
+function slider(key: keyof Settings, min: number, max: number, step: number, unit = '%'): HTMLElement {
   const wrap = document.createElement('div')
   wrap.className = 'slider'
 
@@ -651,10 +657,10 @@ function slider(key: keyof Settings, min: number, max: number, step: number): HT
   input.value = String(settings[key] ?? min)
 
   const value = document.createElement('span')
-  value.textContent = `${input.value}%`
+  value.textContent = `${input.value}${unit}`
 
   input.addEventListener('input', () => {
-    value.textContent = `${input.value}%`
+    value.textContent = `${input.value}${unit}`
   })
   input.addEventListener('change', async () => {
     settings = await window.ie2.setSetting(key, Number(input.value))
@@ -702,12 +708,83 @@ function themePicker(): HTMLElement {
     node.append(group)
   }
 
+  const yours = document.createElement('optgroup')
+  yours.label = 'Yours'
+  const custom = document.createElement('option')
+  custom.value = CUSTOM_THEME_ID
+  custom.textContent = 'Custom…'
+  custom.selected = settings.theme === CUSTOM_THEME_ID
+  yours.append(custom)
+  node.append(yours)
+
   node.addEventListener('change', async () => {
+    const wasCustom = settings.theme === CUSTOM_THEME_ID
+    // A new custom theme starts from whatever was on screen a moment ago.
+    if (node.value === CUSTOM_THEME_ID && !wasCustom) {
+      settings = await window.ie2.setSetting('customTheme', { ...settings.customTheme, base: settings.theme })
+    }
     settings = await window.ie2.setSetting('theme', node.value)
     applyTheme(settings)
+    // The colour editor appears and disappears with the choice.
+    if (wasCustom !== (settings.theme === CUSTOM_THEME_ID)) rerender('appearance')
   })
 
   return node
+}
+
+/**
+ * The custom theme's colours, one row each. Every change repaints the page at
+ * once; Reset hands that one colour back to the theme it started from.
+ */
+function customThemeGroup(): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'group'
+
+  const save = async (changes: Partial<Settings['customTheme']>): Promise<void> => {
+    settings = await window.ie2.setSetting('customTheme', { ...settings.customTheme, ...changes })
+    applyTheme(settings)
+  }
+
+  const base = document.createElement('select')
+  for (const [id, theme] of [...themesByMode().dark, ...themesByMode().light]) {
+    base.add(new Option(theme.name, id, false, settings.customTheme.base === id))
+  }
+  base.addEventListener('change', async () => {
+    await save({ base: base.value })
+    rerender('appearance')
+  })
+  wrap.append(row('Start from', 'Colours you have not changed come from this theme.', base))
+
+  const shown = resolveTheme(CUSTOM_THEME_ID, settings.customTheme).colours
+  for (const [key, title, description] of CUSTOM_THEME_FIELDS) {
+    const control = document.createElement('div')
+    control.className = 'theme-colour'
+
+    const input = document.createElement('input')
+    input.type = 'color'
+    input.value = shown[key]
+    // Live while dragging around the picker, saved when it closes.
+    input.addEventListener('input', () => {
+      applyTheme({ ...settings, customTheme: { ...settings.customTheme, [key]: input.value } })
+    })
+    input.addEventListener('change', () => void save({ [key]: input.value }))
+
+    const reset = document.createElement('button')
+    reset.className = 'action'
+    reset.textContent = t('Reset')
+    reset.disabled = !settings.customTheme[key]
+    reset.addEventListener('click', async () => {
+      await save({ [key]: '' })
+      input.value = themeById(settings.customTheme.base).colours[key]
+      reset.disabled = true
+    })
+    input.addEventListener('change', () => (reset.disabled = false))
+
+    control.append(input, reset)
+    wrap.append(row(title, description, control))
+  }
+
+  return wrap
 }
 
 /**
@@ -835,7 +912,11 @@ const SECTIONS: Section[] = [
     icon: 'settings',
     build: () => [
       group(
-        row('Theme', 'The whole interface: dark or light, and everything in between.', themePicker()),
+        row(
+          'Theme',
+          'The whole interface: dark or light, and everything in between — or Custom, to pick every colour yourself.',
+          themePicker()
+        ),
         row(
           'Accent colour',
           "Highlights, switches and focus rings. Leave it unset to follow the theme's own accent.",
@@ -865,11 +946,16 @@ const SECTIONS: Section[] = [
           toggle('stylePageScrollbars')
         )
       ),
+      ...(settings.theme === CUSTOM_THEME_ID ? [customThemeGroup()] : []),
       group(
         row(
-          'Show bookmarks bar',
+          'Bookmarks bar',
           'The row of bookmarks under the toolbar. The star saves pages into it.',
-          toggle('showBookmarksBar')
+          select('bookmarksBar', [
+            ['always', 'Always'],
+            ['newtab', 'Only on the new tab page'],
+            ['never', 'Never']
+          ])
         ),
         row(
           'Toolbar order',
@@ -982,7 +1068,7 @@ const SECTIONS: Section[] = [
               row(
                 'Sleep after',
                 'Minutes of not being looked at. The tab in front of you, its split-view companion, and anything playing sound are never touched.',
-                slider('sleepAfterMinutes', 5, 120, 5)
+                slider('sleepAfterMinutes', 5, 120, 5, ' min')
               )
             ]
           : [])

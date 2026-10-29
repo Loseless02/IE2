@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'"
+    />
+    <title>App</title>
+    <link rel="stylesheet" href="./appbar.css" />
+  </head>
+  <body>
+    <!-- An installed app's title bar: just enough browser to get around. -->
+    <div id="bar">
+      <img id="icon" alt="" hidden />
+      <button id="back" title="Back (Alt+←)"></button>
+      <button id="reload" title="Reload (Ctrl+R)"></button>
+      <span id="title"></span>
+      <button id="fx" title="Audio effects"></button>
+      <button id="open" title="Open this page in IE2"></button>
+    </div>
+    <div id="fx-panel" hidden></div>
+    <div id="toast" hidden></div>
+    <script type="module" src="./appbar.ts"></script>
+  </body>
+</html>

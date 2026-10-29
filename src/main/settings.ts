@@ -27,6 +27,12 @@ export function loadSettings(): void {
     }
   }
 
+  // 0.8.0 had an on/off switch; off carries over as "never".
+  if (readSetting('bookmarksBar') === undefined && readSetting('showBookmarksBar') === 'false') {
+    next.bookmarksBar = 'never'
+  }
+  if (!['always', 'newtab', 'never'].includes(next.bookmarksBar)) next.bookmarksBar = 'always'
+
   cache = next
 }
 

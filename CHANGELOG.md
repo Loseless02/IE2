@@ -4,6 +4,24 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.8.1
+
+- Custom theme: pick Theme → Custom… in Settings and set every colour yourself —
+  background, surfaces, lines, text and more — starting from any built-in theme
+- Installed web apps have a title bar now: back, reload, the page's title, the
+  audio effects, and a button to open the page in a normal tab. Passwords fill
+  in apps too
+- The bookmarks bar can show always, only on the new tab page, or never
+- Reader mode reads the whole page, not just the first block of it — pages
+  built from cards and sections, and text that fades in as you scroll, come
+  through
+- The manual is reorganised, with contents at the top and sections for sound
+  and installed apps
+- Fixed: Sleep after showed a percentage instead of minutes
+- Fixed: a bookmarks bar folder stayed highlighted after its list closed
+- Fixed: the new tab page's Customise panel scrolled sideways
+- Settings cards no longer sit edge to edge
+
 ## 0.8.0
 
 - Passwords: IE2 offers to save a login when you sign in, offers to update it

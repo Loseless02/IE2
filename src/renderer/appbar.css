@@ -1,0 +1,93 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* The view grows over the page to show the panel, so it has to be see-through
+   wherever the bar or the panel is not. */
+html,
+body {
+  background: transparent;
+  color: var(--text);
+  font: 13px/1.4 system-ui, 'Segoe UI', sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* The bar is the title bar: it drags the window, and leaves the right end clear
+   for the native window buttons. */
+#bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 146px 0 10px;
+  background: var(--bg);
+  -webkit-app-region: drag;
+}
+
+#icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  border-radius: 3px;
+}
+
+#bar button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+
+#bar button:hover:not(:disabled),
+#bar button.active {
+  background: var(--hover);
+}
+
+#bar button:disabled {
+  opacity: 0.35;
+}
+
+#bar button.on {
+  color: var(--accent);
+}
+
+#title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 6px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Hangs from the bar, under the effects button. */
+#fx-panel {
+  top: 40px;
+  right: 150px;
+  width: 330px;
+}
+
+#toast {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 12.5px;
+  transform: translateX(-50%);
+}

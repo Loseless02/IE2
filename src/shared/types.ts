@@ -91,6 +91,8 @@ export interface BrowserState extends TabsState {
   settings: Settings
   /** Whether this window's bookmarks sidebar is open. */
   sidebarOpen: boolean
+  /** Whether the bookmarks bar is showing, which depends on the tab in front. */
+  bookmarksBarShown: boolean
 }
 
 export interface HistoryHit {

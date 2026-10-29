@@ -27,15 +27,8 @@ import {
   type TabState
 } from '../shared/types'
 import { GROUP_COLOUR_IDS, groupColour } from '../shared/groups'
-import {
-  BUILT_IN_FX_PRESETS,
-  NEUTRAL_FX,
-  cleanFx,
-  isNeutral,
-  type AudioFx,
-  type AudioFxPreset,
-  type AudioFxState
-} from '../shared/audiofx'
+import { cleanFx, isNeutral, type AudioFxPreset } from '../shared/audiofx'
+import { createFxPanel } from './fxpanel'
 import {
   PRESETS as MOOD_PRESETS,
   getMood,
@@ -118,7 +111,8 @@ let state: BrowserState = {
   messages: { ...EN },
   splitTabId: null,
   settings: DEFAULT_SETTINGS,
-  sidebarOpen: false
+  sidebarOpen: false,
+  bookmarksBarShown: false
 }
 let suggestions: Suggestion[] = []
 let selected = -1
@@ -1360,6 +1354,7 @@ function renderToolbar(): void {
 
   compatBtn.classList.toggle('on', !!tab?.compat)
   el('bookmarks').classList.toggle('on', state.sidebarOpen)
+  barEl.hidden = !state.bookmarksBarShown
   amnesiaBtn.classList.toggle('on', !!tab?.amnesia)
 
   // State the browser is in, stated plainly, where the URL is.
@@ -1402,7 +1397,7 @@ function applySettings(): void {
   const settings = state.settings ?? DEFAULT_SETTINGS
   const { accent, showDevToolsButton, showCompatButton, showAmnesiaButton, animations } = settings
 
-  applyTheme({ theme: settings.theme, accent })
+  applyTheme({ theme: settings.theme, accent, customTheme: settings.customTheme })
   document.documentElement.classList.toggle('no-motion', !animations)
 
   el('home').hidden = !settings.showHomeButton
@@ -1411,7 +1406,6 @@ function applySettings(): void {
   el('pip').hidden = !settings.showPipButton
   el('split').hidden = !settings.showSplitButton
   el('bookmarks').hidden = !settings.showBookmarksButton
-  barEl.hidden = !settings.showBookmarksBar
   applyToolbarOrder(settings.toolbarOrder ?? [])
   el('media').hidden = !settings.showMediaButton
   el('qr').hidden = !settings.showQrButton
@@ -1893,7 +1887,11 @@ function closeDropdown(): void {
 function closePanels(): void {
   qrOpen = false
   bmEditOpen = false
-  barFolder = null
+  // The folder's button was drawn as open; draw it closed again.
+  if (barFolder !== null) {
+    barFolder = null
+    renderBookmarksBar()
+  }
   ipOpen = false
   moodOpen = false
   siteOpen = false
@@ -3240,158 +3238,22 @@ el('passwords').addEventListener('click', () => window.browser.createTab(PASSWOR
 
 // --- audio effects ---------------------------------------------------------
 
-let fxState: AudioFxState | null = null
-let fxSendTimer: number | undefined
-
-const fxInputs = {
-  speed: el<HTMLInputElement>('fx-speed'),
-  reverb: el<HTMLInputElement>('fx-reverb'),
-  room: el<HTMLInputElement>('fx-room'),
-  bass: el<HTMLInputElement>('fx-bass'),
-  pitch: el<HTMLInputElement>('fx-pitch'),
-  remember: el<HTMLInputElement>('fx-remember')
-}
-
-function roomLabel(room: number): string {
-  return room < 0.25 ? 'Small room' : room < 0.5 ? 'Room' : room < 0.75 ? 'Hall' : 'Cathedral'
-}
-
-function fxFromInputs(): AudioFx {
-  return {
-    speed: Number(fxInputs.speed.value),
-    reverb: Number(fxInputs.reverb.value),
-    room: Number(fxInputs.room.value),
-    bass: Number(fxInputs.bass.value),
-    keepPitch: fxInputs.pitch.checked
-  }
-}
-
-function renderFxValues(fx: AudioFx): void {
-  el('fx-speed-v').textContent = `${fx.speed.toFixed(2)}×`
-  el('fx-reverb-v').textContent = `${Math.round(fx.reverb * 100)}%`
-  el('fx-room-v').textContent = roomLabel(fx.room)
-  el('fx-bass-v').textContent = `${Math.round(fx.bass * 100)}%`
-}
-
-function renderFxPanel(): void {
-  const state = fxState
-  el('fx-site').textContent = state ? new URL(state.origin).host : ''
-  const fx = state?.fx ?? NEUTRAL_FX
-
-  fxInputs.speed.value = String(fx.speed)
-  fxInputs.reverb.value = String(fx.reverb)
-  fxInputs.room.value = String(fx.room)
-  fxInputs.bass.value = String(fx.bass)
-  fxInputs.pitch.checked = fx.keepPitch
-  fxInputs.remember.checked = Boolean(state?.remembered)
-  renderFxValues(fx)
-
-  const report = state?.report
-  el('fx-status').textContent = !report
-    ? ''
-    : !report.hasMedia
-      ? 'Nothing is playing here yet — the settings apply as soon as something does.'
-      : report.limited
-        ? 'This player is protected: speed works, but its sound cannot be given reverb or bass.'
-        : ''
-
-  // The built-in presets, then the ones saved here, each removable.
-  const row = el('fx-presets')
-  row.replaceChildren()
-  const custom = fxPresets
-  for (const preset of [...BUILT_IN_FX_PRESETS, ...custom]) {
-    const button = document.createElement('button')
-    button.className = 'fx-preset'
-    button.textContent = preset.name
-    const active =
-      Math.abs(preset.speed - fx.speed) < 0.005 &&
-      Math.abs(preset.reverb - fx.reverb) < 0.005 &&
-      Math.abs(preset.bass - fx.bass) < 0.005 &&
-      preset.keepPitch === fx.keepPitch
-    button.classList.toggle('on', active)
-    button.addEventListener('click', () => void sendFx(cleanFx(preset)))
-
-    if (custom.includes(preset)) {
-      const remove = document.createElement('span')
-      remove.className = 'fx-remove'
-      remove.title = 'Delete this preset'
-      remove.append(icon('close'))
-      remove.addEventListener('click', (event) => {
-        event.stopPropagation()
-        fxPresets = custom.filter((each) => each !== preset)
-        void window.browser.saveAudioPresets(fxPresets)
-        renderFxPanel()
-      })
-      button.append(remove)
-    }
-    row.append(button)
-  }
-}
+const fxPanel = createFxPanel(el('fx-panel'), {
+  get: () => window.browser.audioFx(),
+  set: (fx, remember) => window.browser.setAudioFx(fx, remember),
+  presets: () => fxPresets,
+  savePresets: (presets) => {
+    fxPresets = presets
+    void window.browser.saveAudioPresets(presets)
+  },
+  toast,
+  resized: () => syncPanels(),
+  changed: (fxState) => el('fx').classList.toggle('on', Boolean(fxState && !isNeutral(fxState.fx)))
+})
 
 async function refreshFx(): Promise<void> {
-  fxState = await window.browser.audioFx()
-  el('fx').classList.toggle('on', Boolean(fxState && !isNeutral(fxState.fx)))
-  if (fxOpen) renderFxPanel()
+  await fxPanel.refresh()
 }
-
-async function sendFx(fx: AudioFx): Promise<void> {
-  const next = await window.browser.setAudioFx(fx, fxInputs.remember.checked)
-  if (next) fxState = next
-  el('fx').classList.toggle('on', Boolean(fxState && !isNeutral(fxState.fx)))
-  renderFxPanel()
-}
-
-// Sliders send as they move, a few times a second at most.
-for (const input of [fxInputs.speed, fxInputs.reverb, fxInputs.room, fxInputs.bass]) {
-  input.addEventListener('input', () => {
-    const fx = fxFromInputs()
-    renderFxValues(fx)
-    window.clearTimeout(fxSendTimer)
-    fxSendTimer = window.setTimeout(() => void sendFx(fx), 60)
-  })
-}
-for (const input of [fxInputs.pitch, fxInputs.remember]) {
-  input.addEventListener('change', () => void sendFx(fxFromInputs()))
-}
-
-// Double-click a value to put just that one back.
-for (const [id, key] of [
-  ['fx-speed-v', 'speed'],
-  ['fx-reverb-v', 'reverb'],
-  ['fx-room-v', 'room'],
-  ['fx-bass-v', 'bass']
-] as [string, keyof AudioFx][]) {
-  el(id).title = 'Double-click to reset'
-  el(id).addEventListener('dblclick', () => void sendFx({ ...fxFromInputs(), [key]: NEUTRAL_FX[key] }))
-}
-
-el('fx-reset').addEventListener('click', () => void sendFx({ ...NEUTRAL_FX }))
-
-el('fx-save').addEventListener('click', () => {
-  el('fx-name-row').hidden = false
-  el<HTMLInputElement>('fx-name').value = ''
-  syncPanels()
-  el('fx-name').focus()
-})
-
-function saveFxPreset(): void {
-  const name = el<HTMLInputElement>('fx-name').value.trim()
-  if (!name) return
-  fxPresets = [...fxPresets.filter((each) => each.name !== name), { name, ...fxFromInputs() }]
-  void window.browser.saveAudioPresets(fxPresets)
-  el('fx-name-row').hidden = true
-  renderFxPanel()
-  syncPanels()
-  toast(`Saved preset "${name}"`)
-}
-el('fx-name-save').addEventListener('click', saveFxPreset)
-el('fx-name').addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') saveFxPreset()
-  if (event.key === 'Escape') {
-    el('fx-name-row').hidden = true
-    syncPanels()
-  }
-})
 
 el('fx').addEventListener('click', async () => {
   if (fxOpen) {
@@ -3400,10 +3262,8 @@ el('fx').addEventListener('click', async () => {
     return
   }
   closeToolsExcept('fx')
-  await refreshFx()
+  await fxPanel.open()
   fxOpen = true
-  el('fx-name-row').hidden = true
-  renderFxPanel()
   syncPanels()
 })
 

@@ -184,6 +184,15 @@ section > h2 {
   background: var(--panel);
 }
 
+/* Cards in one section stand apart; they used to sit edge to edge. */
+section > .group + .group {
+  margin-top: 14px;
+}
+
+section > .group + .about-story {
+  margin-top: 28px;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -906,4 +915,27 @@ input[type='text'] {
 .chip.refused {
   opacity: 0.75;
   text-decoration: line-through;
+}
+
+/* --- custom theme ----------------------------------------------------------- */
+
+.theme-colour {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-colour input[type='color'] {
+  width: 46px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.theme-colour .action:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
