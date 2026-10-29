@@ -1381,7 +1381,6 @@ body {
   height: 32px;
   padding: 0 8px;
   background: var(--border);
-  border-top: 1px solid var(--overlay);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
