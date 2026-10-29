@@ -4,6 +4,25 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.0
+
+- The ☰ menu, at the end of the toolbar: every tool and command in one place —
+  new windows, all the tools, extensions, history and recently closed tabs,
+  bookmarks, downloads, zoom and full screen, print, find, save page and more.
+  A tool works from the menu even when its button is not on the toolbar, and
+  the pin beside it puts the button there or takes it off
+- New shortcuts: Ctrl+N new window, Ctrl+P print, Ctrl+S save page, Ctrl+H
+  history, Ctrl+plus / minus / 0 zoom
+- Themes: Borders and Lines are separate colours now, and the toolbar has a
+  colour of its own. Pick the interface font and how round the corners are.
+  Save a custom theme under a name, switch between saved ones, and export or
+  import them as files
+- The bookmarks sidebar can be made wider or narrower by dragging its left
+  edge, and the browser's own pages have slim scrollbars
+- Middle-clicking a bookmark opens it in a tab behind, as with links
+- Fixed: the dark mode and extensions panels stayed open until their button
+  was pressed again
+
 ## 0.9.0
 
 - Chrome extensions. Open one in the Chrome Web Store and press its Add

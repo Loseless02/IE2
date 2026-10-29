@@ -126,6 +126,14 @@ export interface Settings {
   showFxButton: boolean
   showExtensionsButton: boolean
   showDarkButton: boolean
+  /** The interface's typeface. */
+  uiFont: 'system' | 'bahnschrift' | 'georgia' | 'mono' | 'comic'
+  /** How round corners are, across the toolbar, tabs and panels. */
+  corners: 'square' | 'normal' | 'round'
+  /** Custom themes saved under a name, to switch between or share as files. */
+  savedThemes: { name: string; theme: CustomTheme }[]
+  /** The bookmarks sidebar's width, as last dragged. */
+  sidebarWidth: number
   /** Websites drawn dark — their own dark theme where they have one, darkened where not. */
   darkMode: boolean
   /** Sites dark mode is switched off for, by host without `www.`. */
@@ -245,6 +253,8 @@ export const DEFAULT_SETTINGS: Settings = {
     bgElevated: '',
     bgHover: '',
     border: '',
+    toolbar: '',
+    outline: '',
     text: '',
     textDim: '',
     mark: ''
@@ -268,6 +278,10 @@ export const DEFAULT_SETTINGS: Settings = {
   showFxButton: true,
   showExtensionsButton: true,
   showDarkButton: true,
+  uiFont: 'system',
+  corners: 'normal',
+  savedThemes: [],
+  sidebarWidth: 320,
   darkMode: false,
   darkModeOff: [],
   pinnedExtensions: [],

@@ -22,7 +22,7 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 system-ui, "Segoe UI", sans-serif;
+  font: 14px/1.5 var(--ui-font, system-ui, 'Segoe UI', sans-serif);
 }
 
 ::-webkit-scrollbar {
@@ -155,7 +155,7 @@ main {
   width: 100%;
   height: 42px;
   padding: 0 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 21px;
   background: var(--panel);
   color: var(--text);
@@ -179,7 +179,7 @@ section > h2 {
 }
 
 .group {
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 14px;
   overflow: hidden;
   background: var(--panel);
@@ -235,7 +235,7 @@ input[type='number'] {
   height: 34px;
   min-width: 170px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 9px;
   background: var(--panel-2);
   color: var(--text);
@@ -273,7 +273,7 @@ input:focus {
 button.action {
   height: 34px;
   padding: 0 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 9px;
   background: transparent;
   color: var(--text);
@@ -303,7 +303,7 @@ button.action.danger:hover {
   align-items: center;
   gap: 8px;
   padding: 5px 8px 5px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 16px;
   background: var(--panel-2);
   font-size: 13px;
@@ -386,7 +386,7 @@ button.action.danger:hover {
   pointer-events: auto;
   width: min(440px, calc(100vw - 40px));
   padding: 22px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 16px;
   background: var(--panel);
   box-shadow: 0 24px 60px #000c;
@@ -422,7 +422,7 @@ button.action.danger:hover {
 .sheet button {
   height: 34px;
   padding: 0 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 9px;
   background: transparent;
   color: var(--text);
@@ -484,7 +484,7 @@ button.action.danger:hover {
 .picker-field {
   position: relative;
   height: 120px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 10px;
   cursor: crosshair;
   touch-action: none;
@@ -493,7 +493,7 @@ button.action.danger:hover {
 .picker-hue {
   position: relative;
   height: 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 7px;
   cursor: ew-resize;
   touch-action: none;
@@ -530,7 +530,7 @@ button.action.danger:hover {
   width: 30px;
   height: 30px;
   flex: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 8px;
 }
 
@@ -539,7 +539,7 @@ button.action.danger:hover {
   min-width: 0;
   height: 30px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 8px;
   background: var(--panel);
   color: var(--text);
@@ -881,7 +881,7 @@ input[type='text'] {
   width: 46px;
   height: 30px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 7px;
   background: transparent;
   cursor: pointer;
@@ -902,4 +902,36 @@ input[type='text'] {
 
 .group {
   transition: opacity 240ms ease, filter 240ms ease;
+}
+
+/* Saved custom themes: a name to save under, then one row each. */
+.saved-themes-new,
+.saved-theme-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.saved-themes-new input[type='text'] {
+  width: 160px;
+  padding: 6px 10px;
+  border: 1px solid var(--outline, var(--overlay));
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.saved-theme-swatches {
+  display: flex;
+  margin-right: 6px;
+}
+
+.saved-theme-swatches i {
+  width: 16px;
+  height: 16px;
+  margin-left: -4px;
+  border: 2px solid var(--bg-elevated);
+  border-radius: 50%;
 }

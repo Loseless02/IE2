@@ -163,6 +163,13 @@ export type Shortcut =
   | 'group-new-tab'
   | 'group-close'
   | 'find'
+  | 'new-window'
+  | 'print'
+  | 'save-page'
+  | 'history'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-reset'
 
 /**
  * Once a tab is focused, key presses go to the page, not to our chrome UI — so
@@ -197,6 +204,22 @@ export function shortcutFor(input: Electron.Input): Shortcut | null {
   }
 
   switch (key) {
+    case 'n':
+      return 'new-window'
+    case 'p':
+      return 'print'
+    case 's':
+      return 'save-page'
+    case 'h':
+      return 'history'
+    // The + key is = without Shift on most layouts; both zoom in.
+    case '=':
+    case '+':
+      return 'zoom-in'
+    case '-':
+      return 'zoom-out'
+    case '0':
+      return 'zoom-reset'
     case 't':
       return 'new-tab'
     case 'w':
@@ -777,7 +800,8 @@ export class TabManager {
     const width = Math.max(0, bounds.width - this.insetRight - frame * 2)
     const top = this.insetTop
     const usable = Math.max(0, bounds.height - top - frame)
-    const radius = frame > 0 ? 10 : 0
+    // The page's corners follow the interface's: Settings → Appearance → Corners.
+    const radius = frame > 0 ? { square: 3, normal: 10, round: 16 }[getSettings().corners] ?? 10 : 0
 
     for (const tab of this.tabs) tab.view.setBorderRadius(radius)
 

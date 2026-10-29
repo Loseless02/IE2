@@ -363,8 +363,12 @@ export const BOOKMARKS_BAR_HEIGHT = 32
 /** Width of the bookmarks sidebar docked on the right of the page. */
 export const SIDEBAR_WIDTH = 320
 
-/** Largest the omnibox dropdown may grow before it scrolls internally. */
-export const DROPDOWN_MAX_HEIGHT = 420
+/**
+ * Largest the chrome may grow over the page for a panel or menu. Panels say
+ * how much room they need, and the window's own height limits it too; this
+ * only stops a runaway request. The ☰ menu needs most of a window.
+ */
+export const DROPDOWN_MAX_HEIGHT = 1600
 
 /** A Chrome extension as the toolbar shows it, for the tab in front. */
 export interface ExtensionInfo {

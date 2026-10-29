@@ -1,6 +1,15 @@
 import { activeTheme } from '../shared/themes'
 import { toHex, type Settings } from '../shared/settings'
 
+/** The typefaces the interface can use: Windows ships every one of them. */
+const UI_FONTS: Record<Settings['uiFont'], string> = {
+  system: "system-ui, 'Segoe UI', sans-serif",
+  bahnschrift: "Bahnschrift, 'Segoe UI', sans-serif",
+  georgia: "Georgia, 'Times New Roman', serif",
+  mono: "'Cascadia Mono', Consolas, monospace",
+  comic: "'Comic Sans MS', 'Segoe UI', sans-serif"
+}
+
 /**
  * Push a theme into CSS variables. Every page in the browser calls this — the
  * chrome UI, the new tab page, the manual and settings — so a theme change is
@@ -14,6 +23,8 @@ export function applyTheme(
     animations?: boolean
     customTheme?: Settings['customTheme']
     useCustomTheme?: boolean
+    uiFont?: Settings['uiFont']
+    corners?: Settings['corners']
   }
 ): void {
   const theme = activeTheme(settings)
@@ -24,6 +35,8 @@ export function applyTheme(
   root.style.setProperty('--bg-elevated', c.bgElevated)
   root.style.setProperty('--bg-hover', c.bgHover)
   root.style.setProperty('--border', c.border)
+  root.style.setProperty('--toolbar', c.toolbar)
+  root.style.setProperty('--outline', c.outline)
   root.style.setProperty('--text', c.text)
   root.style.setProperty('--text-dim', c.textDim)
   root.style.setProperty('--mark', c.mark)
@@ -38,6 +51,9 @@ export function applyTheme(
 
   // Lets stylesheets special-case a light interface where they must.
   root.dataset['mode'] = theme.mode
+
+  if (settings.uiFont !== undefined) root.style.setProperty('--ui-font', UI_FONTS[settings.uiFont] ?? UI_FONTS.system)
+  if (settings.corners !== undefined) root.dataset['corners'] = settings.corners
 
   // The Animations setting used to reach only the browser chrome, so every
   // internal page kept moving after it was switched off. Each page calls this,

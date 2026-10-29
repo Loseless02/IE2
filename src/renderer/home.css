@@ -34,7 +34,7 @@ body {
   min-height: 100vh;
   background: transparent;
   color: var(--text);
-  font: 14px/1.5 system-ui, "Segoe UI", sans-serif;
+  font: 14px/1.5 var(--ui-font, system-ui, 'Segoe UI', sans-serif);
 }
 
 main {
@@ -73,7 +73,7 @@ h2 {
   width: 100%;
   height: 46px;
   padding: 0 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 23px;
   background: var(--panel);
   color: var(--text);
@@ -87,7 +87,7 @@ h2 {
 
 #recall-results:not(:empty) {
   margin-top: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 12px;
   overflow: hidden;
 }
@@ -203,7 +203,7 @@ h2 {
 
 #recent-all {
   padding: 3px 9px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 999px;
   background: transparent;
   color: var(--text-dim);
@@ -240,7 +240,7 @@ h2 {
 
 .stat {
   padding: 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 12px;
   background: var(--panel);
 }
@@ -263,7 +263,7 @@ h2 {
 /* Recent */
 
 #recent-list {
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 12px;
   overflow: hidden;
 }
@@ -283,7 +283,7 @@ footer {
 #forget-all {
   flex: none;
   padding: 7px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 8px;
   background: transparent;
   color: var(--text-dim);
@@ -403,7 +403,7 @@ body.glass #recall-input {
 /* A stat that goes somewhere looks like it does. */
 .stat.clickable {
   display: block;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   color: inherit;
   font: inherit;
   text-align: left;
@@ -463,7 +463,7 @@ body.glass #recall-input {
   flex-direction: column;
   width: 320px;
   max-height: calc(100vh - 80px);
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 14px;
   background: var(--bg-elevated);
   box-shadow: 0 16px 40px #000000a6;
@@ -541,7 +541,7 @@ body.glass #recall-input {
   flex: 1;
   min-width: 0;
   padding: 5px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 7px;
   background: var(--bg);
   color: var(--text);
@@ -553,7 +553,7 @@ body.glass #recall-input {
   width: 44px;
   height: 26px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
@@ -569,7 +569,7 @@ body.glass #recall-input {
   max-width: 170px;
   overflow: hidden;
   padding: 5px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 7px;
   background: transparent;
   color: var(--text);
@@ -587,7 +587,7 @@ body.glass #recall-input {
   display: flex;
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 8px;
   background: var(--bg);
 }
@@ -646,7 +646,7 @@ body.glass #recall-input {
 .field select {
   max-width: 150px;
   padding: 5px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 7px;
   background: var(--bg);
   color: var(--text);
@@ -701,7 +701,7 @@ body.glass #recall-input {
 #whats-new {
   margin-bottom: 28px;
   padding: 18px 20px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-left: 3px solid var(--accent);
   border-radius: 12px;
   background: var(--bg-elevated);
@@ -723,7 +723,7 @@ body.glass #recall-input {
 
 #whats-new-close {
   padding: 6px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 8px;
   background: transparent;
   color: var(--text);
@@ -860,4 +860,27 @@ main > *:nth-child(n + 5) { animation-delay: 160ms; }
 
 #customise:hover {
   transform: rotate(45deg);
+}
+
+/* Slim scrollbars, as in Settings, instead of Windows' wide grey ones. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background: var(--hover);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+  background-clip: content-box;
 }

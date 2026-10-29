@@ -171,6 +171,7 @@ let ipOpen = false
 let fxOpen = false
 let extOpen = false
 let darkOpen = false
+let menuOpen = false
 let fxPresets: AudioFxPreset[] = []
 /** The password manager's panel under the key. */
 let pwOpen = false
@@ -1286,6 +1287,7 @@ function drawIcons(): void {
     ['fx', 'fx'],
     ['extensions', 'puzzle'],
     ['dark', 'moon'],
+    ['menu', 'menu'],
     ['site-perms', 'lock'],
     ['pw-key', 'key'],
     ['passwords', 'key'],
@@ -1430,7 +1432,9 @@ function applySettings(): void {
     theme: settings.theme,
     accent,
     customTheme: settings.customTheme,
-    useCustomTheme: settings.useCustomTheme
+    useCustomTheme: settings.useCustomTheme,
+    uiFont: settings.uiFont,
+    corners: settings.corners
   })
   document.documentElement.classList.toggle('no-motion', !animations)
 
@@ -1610,6 +1614,9 @@ function renderSuggestions(): void {
  * the page than it needs.
  */
 function place(panel: HTMLElement, anchor: HTMLElement, width: number, align: 'left' | 'right'): void {
+  // A tool opened from the ☰ menu whose own button is not on the toolbar
+  // hangs from the menu button instead.
+  if (anchor.getClientRects().length === 0) anchor = el('menu')
   const margin = 8
   const box = anchor.getBoundingClientRect()
   const room = document.documentElement.clientWidth
@@ -1639,6 +1646,7 @@ function syncPanels(): void {
   const showFx = fxOpen && !showDropdown && !showPalette
   const showExt = extOpen && !showDropdown && !showPalette
   const showDark = darkOpen && !showDropdown && !showPalette
+  const showMenu = menuOpen && !showDropdown && !showPalette
   // A site's question stays up until it is answered, whatever else opens.
   const showPerm = permQueue.length > 0 && !showPalette && !showDropdown
   const showInstall = installRequest !== null && !showPalette && !showDropdown
@@ -1657,7 +1665,7 @@ function syncPanels(): void {
   // closes the popover like a press anywhere else.
   const anyOpen =
     showDropdown || showDownloads || showShield || showShot || showBookmarks ||
-    showMedia || showQr || showGroup || showBarFolder || showIp || showMood || showSite || showPerm || showPw || showFx || showExt || showInstall || showDark
+    showMedia || showQr || showGroup || showBarFolder || showIp || showMood || showSite || showPerm || showPw || showFx || showExt || showInstall || showDark || showMenu
   document.documentElement.classList.toggle('popover-open', anyOpen)
 
   palette.hidden = !showPalette
@@ -1674,6 +1682,8 @@ function syncPanels(): void {
   el('fx-panel').hidden = !showFx
   el('ext-panel').hidden = !showExt
   el('dark-panel').hidden = !showDark
+  el('main-menu').hidden = !showMenu
+  if (!showMenu) closeSubmenu()
   el('perm-panel').hidden = !showPerm
   el('ext-install').hidden = !showInstall
   if (!showIp) maskIp()
@@ -1711,6 +1721,9 @@ function syncPanels(): void {
   } else if (showDark) {
     place(el('dark-panel'), el('dark'), 300, 'right')
     visible = el('dark-panel')
+  } else if (showMenu) {
+    place(el('main-menu'), el('menu'), 320, 'right')
+    visible = el('main-menu')
   } else if (showPw) {
     place(el('pw-panel'), el('pw-key').hidden ? bookmarkBtn : el('pw-key'), 340, 'right')
     visible = el('pw-panel')
@@ -1761,8 +1774,10 @@ function syncPanels(): void {
     place(el('ext-install'), button.hidden ? el('toolbar') : button, 360, 'right')
   }
   const installHeight = showInstall ? el('ext-install').offsetHeight + 86 : 0
+  const submenu = el('main-submenu')
+  const submenuHeight = showMenu && !submenu.hidden ? submenu.offsetTop + submenu.offsetHeight + 12 : 0
   window.browser.setDropdownHeight(
-    Math.max(panelHeight, groupHeight, findHeight, tipHeight, permHeight, installHeight)
+    Math.max(panelHeight, groupHeight, findHeight, tipHeight, permHeight, installHeight, submenuHeight)
   )
 }
 
@@ -1954,6 +1969,9 @@ function closePanels(): void {
   siteOpen = false
   pwOpen = false
   fxOpen = false
+  extOpen = false
+  darkOpen = false
+  menuOpen = false
   stopMediaPolling()
   mediaOpen = false
   downloadsOpen = false
@@ -2400,9 +2418,9 @@ function bookmarkIcon(entry: BookmarkEntry): Element {
   return image
 }
 
-/** Plain click opens here; middle or Ctrl+click opens a new tab. */
+/** Plain click opens here; middle or Ctrl+click opens it in a tab behind this one. */
 function openBookmark(url: string, event: MouseEvent): void {
-  if (event.button === 1 || event.ctrlKey || event.metaKey) window.browser.createTab(url)
+  if (event.button === 1 || event.ctrlKey || event.metaKey) window.browser.createTab(url, true)
   else window.browser.navigate(url)
 }
 
@@ -2953,7 +2971,8 @@ const TOOL_PANELS: Record<string, string> = {
   'pw-key': 'pw-panel',
   fx: 'fx-panel',
   extensions: 'ext-panel',
-  dark: 'dark-panel'
+  dark: 'dark-panel',
+  menu: 'main-menu'
 }
 
 /** Close every tool popover except the one belonging to `keep`, if given. */
@@ -2973,6 +2992,7 @@ function closeToolsExcept(keep: string | null): void {
   if (keep !== 'fx') fxOpen = false
   if (keep !== 'extensions') extOpen = false
   if (keep !== 'dark') darkOpen = false
+  if (keep !== 'menu') menuOpen = false
   if (keep !== 'mood') moodOpen = false
   if (keep !== 'media' && mediaOpen) {
     mediaOpen = false
@@ -2987,7 +3007,7 @@ function closeToolsExcept(keep: string | null): void {
 document.addEventListener('mousedown', (event) => {
   const target = event.target as HTMLElement
   const panels = Object.values(TOOL_PANELS).map((id) => `#${id}`).join(', ')
-  if (target.closest(`#dropdown, #bar-folder-panel, ${panels}`)) return
+  if (target.closest(`#dropdown, #bar-folder-panel, #main-submenu, ${panels}`)) return
 
   // A bar folder's own button toggles its list in its click handler.
   if (target.closest('.bar-item.folder[data-folder]')) {
@@ -3477,6 +3497,346 @@ el('dark').addEventListener('click', () => {
   drawDark()
   darkOpen = true
   syncPanels()
+})
+
+// --- the ☰ menu --------------------------------------------------------------
+
+/**
+ * Every tool and command IE2 has, whether or not its button is on the
+ * toolbar: the toolbar is for the few used all the time, and this is for the
+ * rest. Tools open as they do from their own button, hanging from the menu
+ * when that button is hidden.
+ */
+
+interface MenuItem {
+  label: string
+  icon?: string | Node
+  keys?: string
+  run?: () => void
+  /** Opens to the side, built when it opens. */
+  sub?: () => MenuRow[] | Promise<MenuRow[]>
+  disabled?: boolean
+  /** A toolbar button's setting, for the pin that shows or hides it. */
+  toolbarSetting?: string
+}
+
+type MenuRow = MenuItem | 'separator' | 'zoom' | { heading: string }
+
+/** The toolbar setting for each tool's button. Tools without one are always shown. */
+const TOOLBAR_SETTING: Record<string, string> = {
+  'copy-link': 'showCopyLinkButton',
+  screenshot: 'showScreenshotButton',
+  pip: 'showPipButton',
+  split: 'showSplitButton',
+  bookmarks: 'showBookmarksButton',
+  media: 'showMediaButton',
+  qr: 'showQrButton',
+  mood: 'showMoodButton',
+  ip: 'showIpButton',
+  passwords: 'showPasswordsButton',
+  fx: 'showFxButton',
+  dark: 'showDarkButton',
+  extensions: 'showExtensionsButton',
+  compat: 'showCompatButton',
+  amnesia: 'showAmnesiaButton',
+  devtools: 'showDevToolsButton'
+}
+
+let submenuTimer: number | undefined
+let submenuFor: HTMLElement | null = null
+
+function closeMenu(): void {
+  menuOpen = false
+  syncPanels()
+}
+
+function closeSubmenu(): void {
+  window.clearTimeout(submenuTimer)
+  submenuFor?.classList.remove('open')
+  submenuFor = null
+  el('main-submenu').hidden = true
+}
+
+/** A toolbar tool, run as if its own button were pressed. */
+function toolItem(id: string): MenuItem {
+  const button = el(id)
+  const svg = button.querySelector('svg')
+  const info = TOOL_INFO[id]
+  return {
+    label: info?.name ?? button.getAttribute('aria-label') ?? id,
+    icon: svg ? svg.cloneNode(true) : (id === 'compat' ? 'compat' : 'help'),
+    keys: info?.keys,
+    disabled: button.getAttribute('aria-disabled') === 'true',
+    toolbarSetting: TOOLBAR_SETTING[id],
+    run: () => button.click()
+  }
+}
+
+function menuIcon(source: string | Node | undefined): Node {
+  if (!source) return document.createElement('span')
+  return typeof source === 'string' ? icon(source) : source
+}
+
+function drawMenu(root: HTMLElement, rows: MenuRow[], depth: number): void {
+  root.replaceChildren()
+  for (const row of rows) {
+    if (row === 'separator') {
+      root.append(Object.assign(document.createElement('div'), { className: 'menu-sep' }))
+      continue
+    }
+    if (row === 'zoom') {
+      root.append(zoomRow())
+      continue
+    }
+    if ('heading' in row) {
+      root.append(Object.assign(document.createElement('div'), { className: 'menu-heading', textContent: row.heading }))
+      continue
+    }
+
+    const item = document.createElement('div')
+    item.className = 'menu-row'
+    item.classList.toggle('disabled', Boolean(row.disabled))
+    const glyph = document.createElement('span')
+    glyph.className = 'menu-icon'
+    glyph.append(menuIcon(row.icon))
+    const label = document.createElement('span')
+    label.className = 'menu-label'
+    label.textContent = row.label
+    item.append(glyph, label)
+
+    if (row.keys) {
+      const keys = document.createElement('span')
+      keys.className = 'menu-keys'
+      keys.textContent = row.keys
+      item.append(keys)
+    }
+
+    if (row.toolbarSetting) {
+      const key = row.toolbarSetting
+      const shown = Boolean((state.settings as unknown as Record<string, unknown> | undefined)?.[key] ?? true)
+      const pin = document.createElement('button')
+      pin.className = 'menu-pin'
+      pin.classList.toggle('on', shown)
+      pin.title = shown ? 'On the toolbar — click to take it off' : 'Put it on the toolbar'
+      pin.append(icon('tack'))
+      pin.addEventListener('click', (event) => {
+        event.stopPropagation()
+        void window.browser.showTool(key, !pin.classList.contains('on'))
+        pin.classList.toggle('on')
+        pin.title = pin.classList.contains('on') ? 'On the toolbar — click to take it off' : 'Put it on the toolbar'
+      })
+      item.append(pin)
+    }
+
+    if (row.sub) {
+      const chev = document.createElement('span')
+      chev.className = 'menu-chev'
+      chev.append(icon('chev'))
+      item.append(chev)
+      const open = (): void => void openSubmenu(item, row.sub as NonNullable<MenuItem['sub']>)
+      item.addEventListener('mouseenter', () => {
+        window.clearTimeout(submenuTimer)
+        submenuTimer = window.setTimeout(open, 140)
+      })
+      item.addEventListener('click', open)
+    } else {
+      if (depth === 0) {
+        item.addEventListener('mouseenter', () => {
+          window.clearTimeout(submenuTimer)
+          submenuTimer = window.setTimeout(closeSubmenu, 200)
+        })
+      }
+      item.addEventListener('click', () => {
+        if (row.disabled) return
+        closeMenu()
+        row.run?.()
+      })
+    }
+    root.append(item)
+  }
+}
+
+async function openSubmenu(row: HTMLElement, build: NonNullable<MenuItem['sub']>): Promise<void> {
+  if (submenuFor === row && !el('main-submenu').hidden) return
+  closeSubmenu()
+  submenuFor = row
+  row.classList.add('open')
+  const submenu = el('main-submenu')
+  drawMenu(submenu, await build(), 1)
+  if (submenuFor !== row || !menuOpen) return
+  submenu.hidden = false
+  // To the left of the menu, level with the row that opened it.
+  const menuBox = el('main-menu').getBoundingClientRect()
+  const rowBox = row.getBoundingClientRect()
+  const width = submenu.offsetWidth
+  submenu.style.left = `${Math.max(8, menuBox.left - width - 4)}px`
+  submenu.style.top = `${Math.max(48, rowBox.top - 6)}px`
+  syncPanels()
+}
+
+/** Zoom: smaller, the level, bigger, and full screen. */
+function zoomRow(): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'menu-row menu-zoom'
+  const glyph = document.createElement('span')
+  glyph.className = 'menu-icon'
+  glyph.append(icon('search'))
+  const label = document.createElement('span')
+  label.className = 'menu-label'
+  label.textContent = 'Zoom'
+  const level = document.createElement('span')
+  level.className = 'menu-zoom-level'
+  level.id = 'menu-zoom-level'
+  const show = (value: number | null): void => {
+    if (value !== null) level.textContent = `${Math.round(value * 100)}%`
+  }
+  void window.browser.menuCommand('zoom-level').then(show)
+
+  const step = (name: string, command: string, glyphName: string): HTMLButtonElement => {
+    const button = document.createElement('button')
+    button.className = 'menu-step'
+    button.title = name
+    button.append(icon(glyphName))
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      void window.browser.menuCommand(command).then(show)
+    })
+    return button
+  }
+  const full = step('Full screen', 'fullscreen', 'expand')
+  full.addEventListener('click', () => closeMenu())
+  level.title = 'Back to 100%'
+  level.addEventListener('click', () => void window.browser.menuCommand('zoom-reset').then(show))
+  row.append(glyph, label, step('Smaller (Ctrl+−)', 'zoom-out', 'minus'), level, step('Bigger (Ctrl++)', 'zoom-in', 'plus'), full)
+  row.addEventListener('mouseenter', () => {
+    window.clearTimeout(submenuTimer)
+    submenuTimer = window.setTimeout(closeSubmenu, 200)
+  })
+  return row
+}
+
+function menuRows(): MenuRow[] {
+  const command = (name: string) => () => void window.browser.menuCommand(name)
+  return [
+    { label: 'New tab', icon: 'plus', keys: 'Ctrl+T', run: () => void window.browser.createTab() },
+    { label: 'New window', icon: 'window', keys: 'Ctrl+N', run: command('new-window') },
+    { label: 'New amnesia tab', icon: 'incognito', keys: 'Ctrl+Shift+N', run: () => void window.browser.createAmnesiaTab() },
+    'separator',
+    {
+      label: 'Tools',
+      icon: 'wrench',
+      sub: () => [
+        { heading: 'The pin keeps a tool on the toolbar' },
+        ...['dark', 'fx', 'mood', 'media', 'reader', 'pip', 'split', 'ip', 'shield', 'compat'].map(toolItem)
+      ]
+    },
+    {
+      label: 'Extensions',
+      icon: 'puzzle',
+      sub: async () => {
+        const list = await window.browser.extensions()
+        return [
+          ...list.map(
+            (info): MenuItem => ({
+              label: info.name,
+              icon: info.icon ? Object.assign(document.createElement('img'), { src: info.icon, alt: '' }) : 'puzzle',
+              disabled: !info.enabled || info.actionDisabled,
+              run: () => void window.browser.clickExtension(info.id, anchorOf(el('menu')))
+            })
+          ),
+          ...(list.length ? ['separator' as const] : []),
+          { label: 'Manage extensions', icon: 'puzzle', toolbarSetting: 'showExtensionsButton', run: () => el('extensions').click() },
+          { label: 'Get extensions from the Chrome Web Store', icon: 'globe', run: () => void window.browser.openExtensionStore() }
+        ]
+      }
+    },
+    'separator',
+    { label: 'Passwords', icon: 'key', toolbarSetting: 'showPasswordsButton', run: () => void window.browser.createTab(PASSWORDS_URL) },
+    {
+      label: 'History',
+      icon: 'clock',
+      sub: async () => {
+        const closed = (await window.browser.closedTabs()).slice(0, 8)
+        return [
+          { label: 'History', icon: 'clock', keys: 'Ctrl+H', run: command('history') },
+          { label: 'Reopen closed tab', icon: 'reload', keys: 'Ctrl+Shift+T', disabled: closed.length === 0, run: command('reopen-tab') },
+          ...(closed.length ? ['separator' as const, { heading: 'Recently closed' }] : []),
+          ...closed.map(
+            (tab): MenuItem => ({
+              label: tab.title || tab.url,
+              icon: tab.favicon ? Object.assign(document.createElement('img'), { src: tab.favicon, alt: '' }) : 'globe',
+              run: () => void window.browser.reopenTab(tab.id)
+            })
+          )
+        ]
+      }
+    },
+    {
+      label: 'Bookmarks',
+      icon: 'bookmark',
+      sub: () => [
+        { label: 'Bookmark this page', icon: 'star', keys: 'Ctrl+D', run: () => bookmarkBtn.click() },
+        { label: 'Bookmarks sidebar', icon: 'bookmark', toolbarSetting: 'showBookmarksButton', run: () => void window.browser.toggleSidebar() },
+        { label: 'Bookmarks manager', icon: 'folder', run: () => void window.browser.createTab(BOOKMARKS_URL) }
+      ]
+    },
+    { label: 'Downloads', icon: 'download', run: () => el('downloads').click() },
+    'separator',
+    'zoom',
+    'separator',
+    { label: 'Print…', icon: 'printer', keys: 'Ctrl+P', run: command('print') },
+    { label: 'Find in page', icon: 'search', keys: 'Ctrl+F', run: () => openFind() },
+    {
+      label: 'Save and share',
+      icon: 'share',
+      sub: () => [
+        { label: 'Save page as…', icon: 'download', keys: 'Ctrl+S', run: command('save-page') },
+        toolItem('screenshot'),
+        toolItem('copy-link'),
+        toolItem('qr'),
+        {
+          label: 'Install this site as an app',
+          icon: 'install',
+          disabled: el('install').hidden,
+          run: () => el('install').click()
+        }
+      ]
+    },
+    {
+      label: 'More tools',
+      icon: 'devtools',
+      sub: () => [
+        { label: 'Command palette', icon: 'search', keys: 'Ctrl+K', run: () => void openPalette() },
+        { label: 'Developer tools', icon: 'devtools', keys: 'F12', toolbarSetting: 'showDevToolsButton', run: () => void window.browser.toggleDevTools() },
+        { label: 'Amnesia tab button', icon: 'incognito', toolbarSetting: 'showAmnesiaButton', run: () => void window.browser.createAmnesiaTab() }
+      ]
+    },
+    'separator',
+    { label: 'Manual', icon: 'help', run: () => el('help').click() },
+    { label: 'Settings', icon: 'settings', run: () => el('settings').click() },
+    { label: 'Exit', icon: 'exit', run: command('quit') }
+  ]
+}
+
+el('menu').addEventListener('click', () => {
+  if (menuOpen) {
+    closeMenu()
+    return
+  }
+  closeToolsExcept('menu')
+  // Never taller than the window has room for; the list scrolls instead.
+  el('main-menu').style.maxHeight = `${Math.max(240, window.outerHeight - 140)}px`
+  drawMenu(el('main-menu'), menuRows(), 0)
+  menuOpen = true
+  syncPanels()
+})
+
+el('main-menu').addEventListener('mouseleave', () => window.clearTimeout(submenuTimer))
+
+window.browser.onZoom((level) => {
+  const shown = document.getElementById('menu-zoom-level')
+  if (shown) shown.textContent = `${Math.round(level * 100)}%`
+  else toast(`Zoom ${Math.round(level * 100)}%`)
 })
 
 el<HTMLInputElement>('dark-all').addEventListener('change', (event) => {

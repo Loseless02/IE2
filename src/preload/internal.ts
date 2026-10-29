@@ -150,6 +150,9 @@ if (window.location.protocol === 'ie2:') {
     forgetPermission: (origin: string, permission: string): Promise<void> =>
       ipcRenderer.invoke('internal:permission-forget', origin, permission),
     closeSidebar: (): Promise<void> => ipcRenderer.invoke('internal:sidebar-close'),
+    /** Drag the sidebar to this width; `done` keeps it for next time. */
+    resizeSidebar: (width: number, done: boolean): Promise<void> =>
+      ipcRenderer.invoke('internal:sidebar-resize', width, done),
     onBookmarksChanged: (callback: () => void): void => {
       ipcRenderer.on('ie2:bookmarks-changed', () => callback())
     },
@@ -161,8 +164,9 @@ if (window.location.protocol === 'ie2:') {
       id: string,
       what: { bookmarks: boolean; history: boolean; searches: boolean; cookies?: boolean }
     ): Promise<ImportResult | null> => ipcRenderer.invoke('internal:import-run', id, what),
-    open: (url: string, newTab?: boolean): Promise<void> =>
-      ipcRenderer.invoke('internal:open', url, newTab),
+    /** `background` keeps the current tab in front, as a middle-click does. */
+    open: (url: string, newTab?: boolean, background?: boolean): Promise<void> =>
+      ipcRenderer.invoke('internal:open', url, newTab, background),
 
     listNeverRemember: (): Promise<string[]> => ipcRenderer.invoke('internal:never-list'),
     addNeverRemember: (domain: string): Promise<void> =>
@@ -245,6 +249,7 @@ export type InternalApi = {
   }
   forgetPermission: (origin: string, permission: string) => Promise<void>
   closeSidebar: () => Promise<void>
+  resizeSidebar: (width: number, done: boolean) => Promise<void>
   onBookmarksChanged: (callback: () => void) => void
   pickImage: () => Promise<string | null>
   pickFolder: () => Promise<{ folder: string; count: number } | null>
@@ -253,7 +258,7 @@ export type InternalApi = {
     id: string,
     what: { bookmarks: boolean; history: boolean; searches: boolean; cookies?: boolean }
   ) => Promise<ImportResult | null>
-  open: (url: string, newTab?: boolean) => Promise<void>
+  open: (url: string, newTab?: boolean, background?: boolean) => Promise<void>
   listNeverRemember: () => Promise<string[]>
   addNeverRemember: (domain: string) => Promise<void>
   removeNeverRemember: (domain: string) => Promise<void>

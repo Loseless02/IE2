@@ -5,7 +5,7 @@
   flex: none;
   height: 34px;
   padding: 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 8px;
   background: transparent;
   color: var(--text-dim);
@@ -54,7 +54,7 @@
   flex: none;
   height: 30px;
   padding: 0 11px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 8px;
   background: transparent;
   color: var(--text-dim);
@@ -76,7 +76,7 @@
 
 .day-select {
   padding: 2px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 999px;
   background: transparent;
   color: var(--text-dim);
@@ -231,7 +231,7 @@
   display: block;
   width: 100%;
   padding: 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 10px;
   margin: 18px 0 40px;
   background: transparent;

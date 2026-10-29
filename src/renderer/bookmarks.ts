@@ -13,6 +13,40 @@ const noteEl = el('note')
 const asSidebar = new URLSearchParams(location.search).has('sidebar')
 document.body.classList.toggle('sidebar', asSidebar)
 
+// Dragging the sidebar's left edge makes it wider or narrower. The page beside
+// it is another view, so the pointer is followed on screen, not in this page.
+if (asSidebar) {
+  const grip = document.getElementById('side-grip') as HTMLElement
+  grip.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+    grip.setPointerCapture(event.pointerId)
+    grip.classList.add('dragging')
+    const startX = event.screenX
+    const startWidth = window.innerWidth
+    let frame = 0
+    let wanted = startWidth
+    const move = (next: PointerEvent): void => {
+      wanted = startWidth + (startX - next.screenX)
+      if (!frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0
+          void window.ie2.resizeSidebar(wanted, false)
+        })
+      }
+    }
+    const done = (): void => {
+      grip.classList.remove('dragging')
+      grip.removeEventListener('pointermove', move)
+      grip.removeEventListener('pointerup', done)
+      grip.removeEventListener('pointercancel', done)
+      void window.ie2.resizeSidebar(wanted, true)
+    }
+    grip.addEventListener('pointermove', move)
+    grip.addEventListener('pointerup', done)
+    grip.addEventListener('pointercancel', done)
+  })
+}
+
 let bookmarks: BookmarkEntry[] = []
 let folders: string[] = []
 
@@ -252,7 +286,8 @@ function renderMark(entry: BookmarkEntry): HTMLElement {
   row.addEventListener('mouseup', (event) => {
     if (event.button !== 0 && event.button !== 1) return
     if ((event.target as HTMLElement).closest('button, input')) return
-    void window.ie2.open(entry.url, event.button === 1 || event.ctrlKey || event.metaKey)
+    const newTab = event.button === 1 || event.ctrlKey || event.metaKey
+    void window.ie2.open(entry.url, newTab, newTab)
   })
 
   const tools = document.createElement('span')

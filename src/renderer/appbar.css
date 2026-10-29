@@ -13,7 +13,7 @@ html,
 body {
   background: transparent;
   color: var(--text);
-  font: 13px/1.4 system-ui, 'Segoe UI', sans-serif;
+  font: 13px/1.4 var(--ui-font, system-ui, 'Segoe UI', sans-serif);
   overflow: hidden;
   user-select: none;
 }
@@ -92,7 +92,7 @@ body {
   top: 40px;
   left: 50%;
   padding: 6px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--outline, var(--border));
   border-radius: 999px;
   background: var(--bg-elevated);
   font-size: 12.5px;

@@ -24,7 +24,19 @@ import type { AudioFx, AudioFxPreset, AudioFxState } from '../shared/audiofx'
  * hatch, so a compromised UI renderer cannot reach arbitrary IPC handlers.
  */
 const api = {
-  createTab: (url?: string): Promise<number> => ipcRenderer.invoke('tab:create', url),
+  /**
+   * The ☰ menu's commands: new window, zoom, fullscreen, print, save page,
+   * history, reopen tab, quit. Zoom commands answer with the new level.
+   */
+  menuCommand: (command: string): Promise<number | null> => ipcRenderer.invoke('menu:command', command),
+  onZoom: (callback: (level: number) => void): void => {
+    ipcRenderer.on('browser:zoom', (_event, level: number) => callback(level))
+  },
+  /** Show or hide a tool's toolbar button — only the show…Button settings. */
+  showTool: (key: string, shown: boolean): Promise<void> =>
+    /^show[A-Za-z]+Button$/.test(key) ? ipcRenderer.invoke('settings:set', key, shown) : Promise.resolve(),
+  /** `background` opens it behind the current tab, as a middle-click does. */
+  createTab: (url?: string, background?: boolean): Promise<number> => ipcRenderer.invoke('tab:create', url, background),
   createAmnesiaTab: (): Promise<number> => ipcRenderer.invoke('tab:amnesia'),
   createTabAt: (url: string, index: number): Promise<number> =>
     ipcRenderer.invoke('tab:create-at', url, index),

@@ -96,6 +96,18 @@ const PATHS: Record<string, string> = {
   mic: '<rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',
   pin: '<path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
   bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  /** The ☰ menu, and the things in it. */
+  menu: '<path d="M4 6.5h16M4 12h16M4 17.5h16"/>',
+  window: '<rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9h18"/>',
+  wrench:
+    '<path d="M14.5 6.5a4 4 0 0 0 5 5L21 13l-8 8-2.5-2.5 6-6-1.5-1.5-6 6L6.5 14.5l8-8z" transform="translate(-2 -2)"/>',
+  printer:
+    '<path d="M7 9V3.5h10V9"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v6.5H7z"/>',
+  share: '<path d="M12 15V3.5M7.5 8 12 3.5 16.5 8"/><path d="M5 12v7.5h14V12"/>',
+  expand: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
+  minus: '<path d="M5 12h14"/>',
+  chev: '<path d="M9 5l7 7-7 7"/>',
+  exit: '<path d="M14 4h5v16h-5"/><path d="M10 8l-4 4 4 4M6 12h10"/>',
   /** Dark mode: a crescent moon. */
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
   /** Extensions: a jigsaw piece. */

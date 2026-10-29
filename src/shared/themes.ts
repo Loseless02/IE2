@@ -16,8 +16,12 @@ export interface Theme {
     bgElevated: string
     /** Hover state for a tab. */
     bgHover: string
-    /** Lines, and the active tab's fill. */
+    /** Lines: dividers inside panels and lists. */
     border: string
+    /** The toolbar band, the bookmarks bar and the tab in front. */
+    toolbar: string
+    /** Borders: the edge round panels, popovers, cards and fields. */
+    outline: string
     text: string
     textDim: string
     accent: string
@@ -28,6 +32,15 @@ export interface Theme {
     /** Stronger wash, for pressed and selected rows. */
     overlay: string
   }
+}
+
+/** `hex` moved `amount` of the way toward `toward`: an opaque stand-in for a wash over it. */
+export function blend(hex: string, toward: string, amount: number): string {
+  const channel = (value: string, at: number): number => parseInt(value.slice(at, at + 2), 16)
+  return `#${[1, 3, 5]
+    .map((at) => Math.round(channel(hex, at) + (channel(toward, at) - channel(hex, at)) * amount))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('')}`
 }
 
 const dark = (
@@ -52,6 +65,8 @@ const dark = (
     textDim,
     accent,
     mark,
+    toolbar: border,
+    outline: blend(bgElevated, '#ffffff', 0.08),
     hover: 'rgba(255, 255, 255, 0.10)',
     overlay: 'rgba(255, 255, 255, 0.06)'
   }
@@ -79,6 +94,8 @@ const light = (
     textDim,
     accent,
     mark,
+    toolbar: border,
+    outline: blend(bgElevated, '#000000', 0.08),
     hover: 'rgba(0, 0, 0, 0.08)',
     overlay: 'rgba(0, 0, 0, 0.05)'
   }
@@ -218,6 +235,8 @@ export const THEMES: Record<string, Theme> = {
       bgElevated: '#0a0a0a',
       bgHover: '#1a1a1a',
       border: '#6fc3df',
+      toolbar: '#6fc3df',
+      outline: '#6fc3df',
       text: '#ffffff',
       textDim: '#d6d6d6',
       accent: '#1aebff',
@@ -307,6 +326,8 @@ export const THEMES: Record<string, Theme> = {
       bgElevated: '#ffffff',
       bgHover: '#ededed',
       border: '#0f4a85',
+      toolbar: '#0f4a85',
+      outline: '#0f4a85',
       text: '#000000',
       textDim: '#3b3b3b',
       accent: '#0f4a85',
@@ -342,6 +363,8 @@ export interface CustomTheme {
   bgElevated: string
   bgHover: string
   border: string
+  toolbar: string
+  outline: string
   text: string
   textDim: string
   mark: string
@@ -363,7 +386,9 @@ export const CUSTOM_THEME_FIELDS: [keyof Omit<CustomTheme, 'base'>, string, stri
   ['bg', 'Background', 'The page behind everything, the tab strip and toolbar.'],
   ['bgElevated', 'Surfaces', 'Panels, popovers, cards and tabs.'],
   ['bgHover', 'Hover', 'A tab or card under the pointer.'],
-  ['border', 'Lines', 'Borders, dividers, and the toolbar band.'],
+  ['toolbar', 'Toolbar', 'The toolbar, the bookmarks bar and the tab in front.'],
+  ['border', 'Lines', 'Dividers between things, inside panels and lists.'],
+  ['outline', 'Borders', 'The edge round panels, popovers, cards and fields.'],
   ['text', 'Text', 'Everything you read.'],
   ['textDim', 'Quiet text', 'Descriptions, hints and secondary labels.'],
   ['mark', 'Search highlight', 'The words that matched, in suggestions and results.']
@@ -392,6 +417,8 @@ export function resolveTheme(id: string, custom?: Partial<CustomTheme> | null): 
     if (isHex(value)) colours[key] = value
   }
 
+  // Older custom themes set only Lines, which used to paint the toolbar too.
+  if (isHex(custom?.border) && !isHex(custom?.toolbar)) colours.toolbar = custom.border
   const mode = brightness(colours.bg) < 0.5 ? 'dark' : 'light'
   colours.hover = mode === 'dark' ? 'rgba(255, 255, 255, 0.10)' : 'rgba(0, 0, 0, 0.08)'
   colours.overlay = mode === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)'

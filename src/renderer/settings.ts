@@ -1,5 +1,6 @@
 import {
   ACCENT_PRESETS,
+  DEFAULT_SETTINGS,
   IMAGE_FITS,
   SEARCH_ENGINES,
   toHex,
@@ -9,6 +10,7 @@ import { contrastOn, createColourPicker } from './colour'
 import {
   CUSTOM_THEME_FIELDS,
   CUSTOM_THEME_ID,
+  THEMES,
   resolveTheme,
   themeById,
   themesByMode
@@ -792,6 +794,141 @@ function customThemeGroup(): HTMLElement {
   return wrap
 }
 
+/** A custom theme as a file: what Export writes and Import reads. */
+interface ThemeFile {
+  ie2Theme: 1
+  name: string
+  theme: Settings['customTheme']
+}
+
+const THEME_KEYS = ['base', ...CUSTOM_THEME_FIELDS.map(([key]) => key)] as const
+
+/** Only the colours a theme can hold, each a #rrggbb or empty; anything else in a file is dropped. */
+function cleanTheme(value: unknown): Settings['customTheme'] | null {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Record<string, unknown>
+  const theme = { ...DEFAULT_SETTINGS.customTheme }
+  for (const key of THEME_KEYS) {
+    const each = source[key]
+    if (key === 'base') {
+      if (typeof each === 'string' && each in THEMES) theme.base = each
+    } else if (typeof each === 'string' && /^#[0-9a-f]{6}$/i.test(each)) {
+      theme[key] = each
+    }
+  }
+  return theme
+}
+
+/**
+ * Save the colours above under a name, put a saved one back, or share one as
+ * a small file — and read such a file in.
+ */
+function savedThemesRow(): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'group saved-themes'
+
+  const store = async (next: Settings['savedThemes']): Promise<void> => {
+    settings = await window.ie2.setSetting('savedThemes', next)
+    rerender('appearance')
+  }
+
+  const name = document.createElement('input')
+  name.type = 'text'
+  name.maxLength = 40
+  name.spellcheck = false
+  name.placeholder = t('Name this theme')
+  const save = document.createElement('button')
+  save.className = 'action'
+  save.textContent = t('Save')
+  const saveIt = (): void => {
+    const label = name.value.trim()
+    if (!label) return name.focus()
+    const rest = settings.savedThemes.filter((each) => each.name !== label)
+    void store([...rest, { name: label, theme: { ...settings.customTheme } }])
+  }
+  save.addEventListener('click', saveIt)
+  name.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') saveIt()
+  })
+
+  const importButton = document.createElement('button')
+  importButton.className = 'action'
+  importButton.textContent = t('Import…')
+  const file = document.createElement('input')
+  file.type = 'file'
+  file.accept = '.json,application/json'
+  file.hidden = true
+  importButton.addEventListener('click', () => file.click())
+  file.addEventListener('change', async () => {
+    const picked = file.files?.[0]
+    file.value = ''
+    if (!picked || picked.size > 64 * 1024) return
+    try {
+      const parsed = JSON.parse(await picked.text()) as Partial<ThemeFile>
+      const theme = cleanTheme(parsed.theme)
+      const label = String(parsed.name ?? picked.name.replace(/\.json$/i, '')).trim().slice(0, 40) || 'Imported'
+      if (!theme) throw new Error('No theme in the file')
+      settings = await window.ie2.setSetting('customTheme', theme)
+      settings = await window.ie2.setSetting('useCustomTheme', true)
+      applyTheme(settings)
+      await store([...settings.savedThemes.filter((each) => each.name !== label), { name: label, theme }])
+    } catch {
+      importButton.textContent = t('Not a theme file')
+      window.setTimeout(() => (importButton.textContent = t('Import…')), 2000)
+    }
+  })
+
+  const top = document.createElement('div')
+  top.className = 'saved-themes-new'
+  top.append(name, save, importButton, file)
+  wrap.append(row(t('Save this theme'), t('Keep these colours under a name, to come back to or share as a file.'), top))
+
+  for (const saved of settings.savedThemes) {
+    const actions = document.createElement('div')
+    actions.className = 'saved-theme-actions'
+
+    const swatches = document.createElement('span')
+    swatches.className = 'saved-theme-swatches'
+    const colours = resolveTheme(CUSTOM_THEME_ID, saved.theme).colours
+    for (const colour of [colours.bg, colours.toolbar, colours.bgElevated, colours.text]) {
+      const swatch = document.createElement('i')
+      swatch.style.background = colour
+      swatches.append(swatch)
+    }
+
+    const use = document.createElement('button')
+    use.className = 'action'
+    use.textContent = t('Use')
+    use.addEventListener('click', async () => {
+      settings = await window.ie2.setSetting('customTheme', { ...saved.theme })
+      settings = await window.ie2.setSetting('useCustomTheme', true)
+      applyTheme(settings)
+      rerender('appearance')
+    })
+
+    const exportButton = document.createElement('button')
+    exportButton.className = 'action'
+    exportButton.textContent = t('Export')
+    exportButton.addEventListener('click', () => {
+      const body: ThemeFile = { ie2Theme: 1, name: saved.name, theme: saved.theme }
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' }))
+      link.download = `${saved.name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'theme'}.ie2theme.json`
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 10_000)
+    })
+
+    const remove = document.createElement('button')
+    remove.className = 'action'
+    remove.textContent = t('Delete')
+    remove.addEventListener('click', () => void store(settings.savedThemes.filter((each) => each !== saved)))
+
+    actions.append(swatches, use, exportButton, remove)
+    wrap.append(row(saved.name, '', actions))
+  }
+  return wrap
+}
+
 /**
  * In-app confirmation, themed like the rest of the browser.
  *
@@ -933,6 +1070,26 @@ const SECTIONS: Section[] = [
           accentPicker()
         ),
         row(
+          'Interface font',
+          'The typeface of the toolbar, menus and the browser’s own pages.',
+          select('uiFont', [
+            ['system', 'System (Segoe UI)'],
+            ['bahnschrift', 'Bahnschrift'],
+            ['georgia', 'Georgia'],
+            ['mono', 'Cascadia Mono'],
+            ['comic', 'Comic Sans']
+          ])
+        ),
+        row(
+          'Corners',
+          'How round tabs, buttons, the address bar, panels and the page frame are.',
+          select('corners', [
+            ['square', 'Square'],
+            ['normal', 'Normal'],
+            ['round', 'Round']
+          ])
+        ),
+        row(
           'Tab width',
           'How much room each tab takes before shrinking.',
           select('tabWidth', [
@@ -962,6 +1119,8 @@ const SECTIONS: Section[] = [
         )
       ),
       customThemeGroup(),
+      // Outside the locked card: using or importing a saved theme switches custom on.
+      savedThemesRow(),
       group(
         row(
           'Bookmarks bar',

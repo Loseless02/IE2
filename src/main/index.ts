@@ -18,6 +18,7 @@ import {
   BOOKMARKS_URL,
   CHROME_HEIGHT,
   DROPDOWN_MAX_HEIGHT,
+  HISTORY_URL,
   HOME_URL,
   PASSWORDS_URL,
   READER_URL,
@@ -28,7 +29,7 @@ import {
   type ReaderArticle,
   type TabsState
 } from '../shared/types'
-import { TabManager, type Shortcut } from './tabs'
+import { TabManager, shortcutFor, type Shortcut } from './tabs'
 import { answerPermission, initPermissions, pendingPermissions } from './permissions'
 import { ALL_PARTITIONS, PARTITION } from './partitions'
 import { buildSuggestions, engineSuggestions } from './suggest'
@@ -359,33 +360,11 @@ function createWindow(startUrl?: string, torn?: TornTab): void {
     const mod = input.control || input.meta
     if (!mod && input.key !== 'F12') return
 
-    const key = input.key.toLowerCase()
-
-    if (input.shift && ['n', 't', 'p'].includes(key)) {
+    // The same shortcuts as in a page, so they work wherever focus is.
+    const action = shortcutFor(input)
+    if (action) {
       event.preventDefault()
-      runShortcut(shell, key === 'n' ? 'amnesia-tab' : key === 't' ? 'reopen-tab' : 'palette')
-    } else if (!input.shift && key === 'f') {
-      event.preventDefault()
-      runShortcut(shell, 'find')
-    } else if (!input.shift && ['t', 'w', 'l', 'r', 'd', 'k'].includes(key)) {
-      event.preventDefault()
-      runShortcut(
-        shell,
-        key === 't'
-          ? 'new-tab'
-          : key === 'w'
-            ? 'close-tab'
-            : key === 'l'
-              ? 'focus-omnibox'
-              : key === 'r'
-                ? 'reload'
-                : key === 'k'
-                  ? 'palette'
-                  : 'bookmark'
-      )
-    } else if (input.key === 'F12') {
-      event.preventDefault()
-      runShortcut(shell, 'devtools')
+      runShortcut(shell, action)
     }
   })
 
@@ -781,8 +760,76 @@ function runShortcut(shell: Shell, action: Shortcut): void {
       shell.chrome.webContents.focus()
       shell.chrome.webContents.send('browser:open-palette')
       break
+    case 'new-window':
+      createWindow()
+      break
+    case 'print':
+      shell.tabs.activeWebContents()?.print()
+      break
+    case 'save-page':
+      void savePage(shell)
+      break
+    case 'history':
+      shell.tabs.createTab(HISTORY_URL)
+      break
+    case 'zoom-in':
+    case 'zoom-out':
+    case 'zoom-reset':
+      zoom(shell, action === 'zoom-in' ? 1 : action === 'zoom-out' ? -1 : 0)
+      break
   }
 }
+
+/** Chrome's zoom steps. */
+const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5]
+
+/**
+ * One step bigger or smaller, or back to 100%. Chromium keeps the level per
+ * site, so the next page on the same site opens at it too. The chrome UI is
+ * told, to say the new level.
+ */
+function zoom(shell: Shell, direction: 1 | -1 | 0): number {
+  const page = shell.tabs.activeWebContents()
+  if (!page) return 1
+  const now = page.getZoomFactor()
+  const next =
+    direction === 0
+      ? 1
+      : direction > 0
+        ? (ZOOM_STEPS.find((step) => step > now + 0.001) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1])
+        : ([...ZOOM_STEPS].reverse().find((step) => step < now - 0.001) ?? ZOOM_STEPS[0])
+  page.setZoomFactor(next)
+  if (!shell.chrome.webContents.isDestroyed()) shell.chrome.webContents.send('browser:zoom', next)
+  return next
+}
+
+/** Save the page in front, with its pictures and styles, where the user says. */
+async function savePage(shell: Shell): Promise<void> {
+  const page = shell.tabs.activeWebContents()
+  if (!page || !isAllowedUrl(page.getURL())) return
+  const name = (page.getTitle() || 'page').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 100) || 'page'
+  const { canceled, filePath } = await dialog.showSaveDialog(shell.window, {
+    defaultPath: join(app.getPath('downloads'), `${name}.html`),
+    filters: [{ name: 'Web page, complete', extensions: ['html'] }]
+  })
+  if (canceled || !filePath) return
+  await page.savePage(filePath, 'HTMLComplete').catch((error) => console.error('Saving the page failed:', error))
+}
+
+/** What the ☰ menu can ask for beyond the shortcuts. Named, never arbitrary. */
+const MENU_COMMANDS = new Set([
+  'new-window',
+  'print',
+  'save-page',
+  'history',
+  'zoom-in',
+  'zoom-out',
+  'zoom-reset',
+  'zoom-level',
+  'fullscreen',
+  'reopen-tab',
+  'quit'
+])
 
 function toggleBookmarkForActiveTab(shell: Shell): void {
   const url = shell.tabs.activeUrl()
@@ -984,25 +1031,35 @@ function layoutChrome(shell: Shell): void {
   shell.chrome.setBounds({ x: 0, y: 0, width, height: Math.min(wanted, height) })
 }
 
+/** How wide the bookmarks sidebar is, as last dragged. Shared by every window. */
+let sidebarWidth = SIDEBAR_WIDTH
+
+/** Wide enough to use, and never so wide the page beside it disappears. */
+function clampSidebar(shell: Shell, width: number): number {
+  const room = shell.window.getContentBounds().width
+  return Math.round(Math.max(240, Math.min(width, 720, room - 320)))
+}
+
 /** Chrome on top, the sidebar down the right, and the tabs in what is left. */
 function layoutShell(shell: Shell): void {
   layoutChrome(shell)
 
   const { width, height } = shell.window.getContentBounds()
   const top = chromeTop(shell)
+  const side = shell.sidebar ? Math.min(clampSidebar(shell, sidebarWidth), width) : 0
   shell.sidebar?.setBounds({
-    x: Math.max(0, width - SIDEBAR_WIDTH),
+    x: Math.max(0, width - side),
     y: top,
-    width: Math.min(SIDEBAR_WIDTH, width),
+    width: side,
     height: Math.max(0, height - top)
   })
-  shell.tabs.setInsets(top, shell.sidebar ? SIDEBAR_WIDTH : 0)
+  shell.tabs.setInsets(top, side)
 
   // With the frame on, the window shows round the page in the toolbar's own
   // colour, so the page reads as set into the browser.
   const frame = getSettings().pageFrame ? PAGE_FRAME : 0
   const colours = activeTheme(getSettings()).colours
-  shell.window.setBackgroundColor(frame ? colours.border : colours.bg)
+  shell.window.setBackgroundColor(frame ? colours.toolbar : colours.bg)
   shell.tabs.setFrame(frame)
 }
 
@@ -1326,6 +1383,15 @@ function registerInternalIpc(): void {
     'internal:permission-forget',
     fromInternalPage((origin: string, permission: string) => setSitePermission(origin, permission, null))
   )
+  ipcMain.handle('internal:sidebar-resize', (event: Electron.IpcMainInvokeEvent, width: number, done: boolean) => {
+    if (!isInternalUrl(event.senderFrame?.url)) return
+    const shell = shellOwningSidebar(event.sender.id)
+    if (!shell || !Number.isFinite(width)) return
+    sidebarWidth = clampSidebar(shell, width)
+    for (const each of shells.values()) if (each.sidebar) layoutShell(each)
+    if (done) setSetting('sidebarWidth', sidebarWidth)
+  })
+
   ipcMain.handle('internal:sidebar-close', (event: Electron.IpcMainInvokeEvent) => {
     if (!isInternalUrl(event.senderFrame?.url)) return
     const shell = shellOwningSidebar(event.sender.id)
@@ -1348,11 +1414,11 @@ function registerInternalIpc(): void {
     'internal:forget-site',
     fromInternalPage((domain: string) => forgetSite(domain))
   )
-  ipcMain.handle('internal:open', (event: Electron.IpcMainInvokeEvent, url: string, newTab?: boolean) => {
+  ipcMain.handle('internal:open', (event: Electron.IpcMainInvokeEvent, url: string, newTab?: boolean, background?: boolean) => {
     if (!isInternalUrl(event.senderFrame?.url)) return
     const shell = shellFor(event)
     if (!shell) return
-    if (newTab) shell.tabs.createTab(normalizeInput(url))
+    if (newTab) shell.tabs.createTab(normalizeInput(url), { activate: !background })
     else shell.tabs.navigate(url)
   })
 }
@@ -1432,7 +1498,33 @@ function registerIpc(): void {
 
   // Every handler below acts on the window that sent the call. Resolving the
   // window per call is what keeps a second window from hijacking the first.
-  ipcMain.handle('tab:create', (e, url?: string) => shellFor(e)?.tabs.createTab(url))
+  ipcMain.handle('menu:command', (e, command: string): number | null => {
+    const shell = shellFor(e)
+    if (!shell || !MENU_COMMANDS.has(command)) return null
+    switch (command) {
+      case 'zoom-level':
+        return shell.tabs.activeWebContents()?.getZoomFactor() ?? 1
+      case 'fullscreen':
+        shell.window.setFullScreen(!shell.window.isFullScreen())
+        return null
+      case 'quit':
+        app.quit()
+        return null
+      case 'zoom-in':
+        return zoom(shell, 1)
+      case 'zoom-out':
+        return zoom(shell, -1)
+      case 'zoom-reset':
+        return zoom(shell, 0)
+      default:
+        runShortcut(shell, command as Shortcut)
+        return null
+    }
+  })
+
+  ipcMain.handle('tab:create', (e, url?: string, background?: boolean) =>
+    shellFor(e)?.tabs.createTab(url, { activate: !background })
+  )
   ipcMain.handle('tab:create-at', (e, url: string, index: number) =>
     shellFor(e)?.tabs.createTab(url, { index, activate: true })
   )
@@ -1800,6 +1892,7 @@ app.whenReady().then(async () => {
 
   initDb()
   loadSettings()
+  sidebarWidth = getSettings().sidebarWidth
   handleInternalProtocol(ALL_PARTITIONS)
   initPermissions((contents, request) => {
     const shell = shellOwningTab(contents.id)

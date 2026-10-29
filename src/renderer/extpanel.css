@@ -7,11 +7,11 @@
   display: flex;
   flex-direction: column;
   padding-bottom: 6px;
-  border: 1px solid var(--overlay);
+  border: 1px solid var(--outline, var(--overlay));
   border-radius: 14px;
   background: var(--bg-elevated);
   color: var(--text);
-  box-shadow: 0 10px 30px #000000a6, 0 1px 0 var(--overlay) inset;
+  box-shadow: 0 10px 30px #000000a6, 0 1px 0 var(--outline, var(--overlay)) inset;
   overflow: hidden;
   animation: ext-pop 130ms cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: top right;
