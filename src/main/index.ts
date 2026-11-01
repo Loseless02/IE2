@@ -1525,8 +1525,10 @@ function registerIpc(): void {
   ipcMain.handle('tab:create', (e, url?: string, background?: boolean) =>
     shellFor(e)?.tabs.createTab(url, { activate: !background })
   )
-  ipcMain.handle('tab:create-at', (e, url: string, index: number) =>
-    shellFor(e)?.tabs.createTab(url, { index, activate: true })
+  // Whatever was dropped on the strip: a link opens, anything else is searched
+  // for — the same as typing it into the address bar.
+  ipcMain.handle('tab:create-at', (e, input: string, index: number) =>
+    shellFor(e)?.tabs.createTab(normalizeInput(String(input ?? '')), { index, activate: true })
   )
   ipcMain.handle('tab:amnesia', (e) =>
     shellFor(e)?.tabs.createTab(HOME_URL, { amnesia: true })

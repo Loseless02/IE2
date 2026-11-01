@@ -4,6 +4,17 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.1
+
+- Saved logins show up in a list under a login field as soon as you click it,
+  as in other browsers — pick one and it goes in. Locked, the list offers to
+  unlock instead
+- Fixed: filling a saved login said "Filled in" when nothing had been filled.
+  Sign-ins that ask for the email first, like Google's, now get the email, and
+  the password on the next page by itself
+- Fixed: dropping text on the tab strip opened nothing. A link opens, an
+  address like example.org opens, and anything else is searched for
+
 ## 0.10.0
 
 - The ☰ menu, at the end of the toolbar: every tool and command in one place —

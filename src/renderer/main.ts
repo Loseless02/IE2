@@ -650,10 +650,15 @@ function setupTabDrop(): void {
     const data = event.dataTransfer
     if (!data) return
 
-    // A dragged link arrives as text/uri-list; plain text is the fallback.
-    const raw =
-      data.getData('text/uri-list') || data.getData('text/plain') || data.getData('text')
-    const url = raw.split(/\r?\n/).find((line) => line.trim() && !line.startsWith('#'))?.trim()
+    // A dragged link arrives as text/uri-list, one link per line. Selected text
+    // arrives as plain text and is searched for whole, its lines joined.
+    const link = data
+      .getData('text/uri-list')
+      .split(/\r?\n/)
+      .find((line) => line.trim() && !line.startsWith('#'))
+      ?.trim()
+    const text = (data.getData('text/plain') || data.getData('text')).replace(/\s+/g, ' ').trim()
+    const url = link || text.slice(0, 2000)
     if (!url) return
 
     if (target.kind === 'replace') window.browser.navigateTab(target.id, url)
@@ -3284,6 +3289,10 @@ window.browser.onPasswordOffer((offer) => {
   openPasswordPanel('offer')
 })
 window.browser.onPasswordsChanged(() => void refreshPasswordKey())
+window.browser.onOpenPasswords(async () => {
+  await refreshPasswordKey()
+  openPasswordPanel('fill')
+})
 
 pwKey.addEventListener('click', async () => {
   if (pwOpen) {

@@ -213,6 +213,10 @@ const api = {
   onPasswordsChanged: (callback: () => void): void => {
     ipcRenderer.on('browser:passwords-changed', () => callback())
   },
+  /** The list under a page's login field asked for the passwords panel. */
+  onOpenPasswords: (callback: () => void): void => {
+    ipcRenderer.on('browser:open-passwords', () => callback())
+  },
   answerPasswordOffer: (
     choice: 'save' | 'never' | 'dismiss',
     master?: string

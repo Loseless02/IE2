@@ -55,6 +55,33 @@ const pending = new Map<number, Pending>()
 /** Which origin each tab last reported a login form on. */
 const formsSeen = new Map<number, string>()
 
+/** What a page found to put a login in. */
+type FillResult = 'both' | 'username' | 'password' | 'none'
+
+/** A fill sent to a tab, waiting to hear what the page actually filled. */
+const filling = new Map<number, (result: FillResult) => void>()
+
+/**
+ * A login whose username went in on a page with no password field yet — the
+ * email-first sign-ins, Google's and Microsoft's among them. Its password goes
+ * in when a password field turns up in the same tab on the same site.
+ */
+const nextStep = new Map<number, { origin: string; id: number; expires: number }>()
+
+/** Per-tab state is dropped with the tab. */
+const watched = new Set<number>()
+function watch(tab: WebContents): void {
+  if (watched.has(tab.id)) return
+  const id = tab.id
+  watched.add(id)
+  tab.once('destroyed', () => {
+    watched.delete(id)
+    formsSeen.delete(id)
+    nextStep.delete(id)
+    filling.get(id)?.('none')
+  })
+}
+
 function originOf(url: string | undefined): string | null {
   try {
     const parsed = new URL(url ?? '')
@@ -77,12 +104,36 @@ function cleanLogin(value: unknown): { username: string; password: string } | nu
   return { username: username.trim(), password }
 }
 
-function fill(tab: WebContents, id: number): boolean {
+/**
+ * Send a login to the page and wait for what it really filled — a page with no
+ * field to put it in must not be reported as filled.
+ */
+function fill(tab: WebContents, id: number): Promise<boolean> {
   const login = readCredential(id)
-  if (!login || originOf(tab.getURL()) !== login.origin) return false
-  tab.mainFrame.send('pw:fill', { username: login.username, password: login.password })
-  markUsed(id)
-  return true
+  const origin = originOf(tab.getURL())
+  if (!login || !origin || origin !== login.origin) return Promise.resolve(false)
+  watch(tab)
+  filling.get(tab.id)?.('none')
+
+  return new Promise((resolve) => {
+    const done = (result: FillResult): void => {
+      clearTimeout(timer)
+      filling.delete(tab.id)
+      if (result === 'username') nextStep.set(tab.id, { origin, id, expires: Date.now() + 5 * 60_000 })
+      else if (result !== 'none') nextStep.delete(tab.id)
+      if (result !== 'none') markUsed(id)
+      resolve(result !== 'none')
+    }
+    const timer = setTimeout(() => done('none'), 2000)
+    filling.set(tab.id, done)
+    tab.mainFrame.send('pw:fill', { username: login.username, password: login.password })
+  })
+}
+
+/** The top frame of a web page, and its origin — or null for anything else. */
+function topFrameOrigin(event: Electron.IpcMainInvokeEvent): string | null {
+  if (!event.senderFrame || event.senderFrame.parent !== null) return null
+  return originOf(event.senderFrame.url)
 }
 
 export function registerPasswordIpc(hooks: Hooks): void {
@@ -100,19 +151,54 @@ export function registerPasswordIpc(hooks: Hooks): void {
     if (!event.senderFrame || event.senderFrame.parent !== null) return
     const origin = originOf(event.senderFrame?.url)
     if (!origin) return
-    // One clean-up per tab, however many pages with forms it goes through.
-    if (!formsSeen.has(event.sender.id)) {
-      const id = event.sender.id
-      event.sender.once('destroyed', () => formsSeen.delete(id))
-    }
+    watch(event.sender)
     formsSeen.set(event.sender.id, origin)
 
-    // Unlocked, one login for this site, and autofill on: fill it now.
-    if (vaultUnlocked() && getSettings().autofillPasswords) {
+    // The second page of an email-first sign-in: the password of the login
+    // whose username was just filled.
+    const step = nextStep.get(event.sender.id)
+    if (step && step.origin === origin && step.expires > Date.now() && vaultUnlocked()) {
+      void fill(event.sender, step.id)
+    } else if (vaultUnlocked() && getSettings().autofillPasswords) {
+      // Unlocked, one login for this site, and autofill on: fill it now.
       const accounts = credentialsFor(origin)
-      if (accounts.length === 1) fill(event.sender, accounts[0].id)
+      if (accounts.length === 1) void fill(event.sender, accounts[0].id)
     }
     tell()
+  })
+
+  ipcMain.handle('pw:fill-result', (event, result: unknown) => {
+    if (!topFrameOrigin(event)) return
+    const known: FillResult[] = ['both', 'username', 'password', 'none']
+    filling.get(event.sender.id)?.(known.includes(result as FillResult) ? (result as FillResult) : 'none')
+  })
+
+  // The list under a login field: usernames only. Passwords never go to the
+  // page except by being filled into its fields.
+  ipcMain.handle('pw:suggest', (event) => {
+    const origin = topFrameOrigin(event)
+    if (!origin) return null
+    const count = credentialCount(origin)
+    if (count === 0) return null
+    return {
+      vault: vaultState(),
+      count,
+      accounts: credentialsFor(origin).map(({ id, username }) => ({ id, username }))
+    }
+  })
+
+  ipcMain.handle('pw:fill-mine', (event, id: unknown) => {
+    if (!topFrameOrigin(event)) return false
+    return fill(event.sender, Number(id))
+  })
+
+  // Locked: unlocking happens in the browser's own panel, never in the page.
+  ipcMain.handle('pw:open-panel', (event) => {
+    if (!topFrameOrigin(event)) return
+    const chrome = hooks.chromeFor(event.sender)
+    if (!chrome || chrome.isDestroyed() || hooks.activeTabFor(chrome) !== event.sender) return
+    chrome.focus()
+    chrome.send('browser:open-passwords')
   })
 
   ipcMain.handle('pw:submitted', (event, value: unknown) => {
