@@ -82,14 +82,19 @@ import { getSettings, loadSettings, resetSettings, setSetting } from './settings
 import { isDefaultBrowser, openableFromArgv, requestDefaultBrowser } from './defaults'
 import { extractArticle } from './reader'
 import {
+  applyPendingUpdate,
   check,
   download,
+  finishUpdate,
   initUpdater,
   installNow,
+  justUpdatedTo,
   latestChanges,
   onUpdateState,
+  updateInProgress,
   updateState
 } from './updater'
+import { closeSplash, focusSplash, showSplash } from './splash'
 import { activeTheme } from '../shared/themes'
 import type { TabGroupColour } from '../shared/groups'
 import type { Settings } from '../shared/settings'
@@ -1862,10 +1867,32 @@ app.setAppUserModelId(APP_USER_MODEL_ID)
  * writing to the same database. The second instance hands its URL to the first
  * and exits.
  */
-if (!app.requestSingleInstanceLock()) {
+/** The first window is up. Until then a second launch has nothing to open into. */
+let started = false
+/** A link opened while the browser was still starting, for its first window. */
+let startupUrl: string | null = null
+/** This launch is handing over to the update installer, and opens nothing. */
+let handingOver: Promise<void> | null = null
+
+if (updateInProgress()) {
+  // Clicked while an update is being installed: the installer opens the new
+  // version itself, and this copy would only be in its way.
   app.exit(0)
+} else if (!app.requestSingleInstanceLock()) {
+  app.exit(0)
+} else if ((handingOver = applyPendingUpdate())) {
+  // An update was downloaded last time and never installed. Its own window
+  // shows it being applied, and the new version opens when it is done.
+  void handingOver.then(() => app.exit(0))
 } else {
   app.on('second-instance', (_event, argv) => {
+    // Clicked again while starting: one browser is on its way, not two.
+    if (!started) {
+      startupUrl = openableFromArgv(argv) ?? startupUrl
+      focusSplash()
+      return
+    }
+
     // An installed app's shortcut, clicked while the browser is open.
     const single = appModeUrl(argv)
     if (single) {
@@ -1891,6 +1918,10 @@ app.whenReady().then(async () => {
   // No File / Edit / View menu bar. Clipboard and text-editing shortcuts are
   // handled by Chromium inside web contents, so nothing useful is lost.
   Menu.setApplicationMenu(null)
+  if (handingOver) return
+
+  const updatedTo = justUpdatedTo()
+  showSplash(updatedTo ? `Updated to ${updatedTo}. Starting…` : 'Starting…')
 
   initDb()
   loadSettings()
@@ -1923,8 +1954,12 @@ app.whenReady().then(async () => {
     // Opened by Windows with a link or a file? Start on that rather than the
     // new tab page. This is what being the default browser actually means.
     const opened = openableFromArgv(process.argv)
-    createWindow(opened ?? undefined)
+    createWindow(opened ?? startupUrl ?? undefined)
   }
+  started = true
+  closeSplash()
+  // The new version is up: this closes the "Updating" window too.
+  finishUpdate()
 
   // Filter lists load in the background; the window does not wait on them.
   void initAdblock().then(pushStateEverywhere)

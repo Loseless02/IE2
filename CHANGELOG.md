@@ -4,6 +4,19 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.2
+
+- Ctrl + mouse wheel makes pages bigger and smaller
+- A small window shows IE2 is starting, so a slow first start no longer looks
+  like nothing happened. Clicking IE2 again while it starts no longer opens a
+  second window
+- Updates: once one is downloaded, the button in Settings is Restart to update
+  — no question popping up, and no going back to checking and downloading it
+  all again. Closed instead, the update is applied the next time you open IE2,
+  with a window saying so, and the new version opens by itself
+- Fixed: opening IE2 while an update was installing got it closed again, and
+  the update did not open IE2 afterwards
+
 ## 0.10.1
 
 - Saved logins show up in a list under a login field as soon as you click it,

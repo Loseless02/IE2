@@ -1271,6 +1271,12 @@ export class TabManager {
       owner().onShortcut(action)
     })
 
+    // Ctrl+wheel. Electron reports it and leaves the zooming to the app; going
+    // through the same steps as Ctrl+plus keeps the toolbar's level in step.
+    wc.on('zoom-changed', (_event, direction) => {
+      if (owner().activeId === tab.id) owner().onShortcut(direction === 'in' ? 'zoom-in' : 'zoom-out')
+    })
+
     // The single gate on writing anything down. An amnesia tab never records.
     const remembers = (url: string): boolean => !tab.amnesia && shouldIndex(url)
 
