@@ -4,6 +4,13 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.5
+
+- Closing a tab: it tears into pieces where it stands, and a little dust
+  drifts off for a moment after. The other tabs wait, then close the gap.
+  Fixed on the way: a closing tab no longer jumps to the far left of the strip
+  first, dragging every other tab along with it
+
 ## 0.10.4
 
 - Fixed: Restart to update could stack up "A JavaScript error occurred —

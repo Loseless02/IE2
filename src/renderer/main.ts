@@ -236,6 +236,109 @@ const tabNodes = new Map<number, HTMLElement>()
 /** Group chips, kept the same way and for the same reason. */
 const groupNodes = new Map<number, HTMLElement>()
 
+/** Closed tabs still in the strip while they go, and what each stood after. */
+const departing = new Map<HTMLElement, Element | null>()
+
+/** The nearest tab or chip before this one that is not itself going. */
+function previousStaying(node: HTMLElement): Element | null {
+  let before = node.previousElementSibling
+  while (before && before.classList.contains('leaving')) before = before.previousElementSibling
+  return before
+}
+
+const random = (from: number, to: number): number => from + Math.random() * (to - from)
+
+/**
+ * A closed tab comes apart where it stands: torn into shards of itself that
+ * drift apart and fade, and a little dust that lingers a moment longer.
+ *
+ * The shards are copies of the tab, each clipped to one piece, in a layer of
+ * their own above the strip — the strip clips anything that leaves it.
+ */
+function shatter(node: HTMLElement): void {
+  const box = node.getBoundingClientRect()
+  if (box.width < 8 || document.documentElement.classList.contains('no-motion')) return
+
+  const layer = document.createElement('div')
+  layer.className = 'shatter'
+  layer.style.left = `${box.left}px`
+  layer.style.top = `${box.top}px`
+  layer.style.width = `${box.width}px`
+  layer.style.height = `${box.height}px`
+  document.body.append(layer)
+
+  // Cut along a grid whose inner corners are pushed about, so the pieces are
+  // torn rather than sliced. Edges stay on the edges, so the pieces still make
+  // up the whole tab at the first frame.
+  const cols = Math.max(3, Math.min(9, Math.round(box.width / 26)))
+  const rows = 2
+  const corner = (c: number, r: number): [number, number] => [
+    c === 0 || c === cols ? (c / cols) * 100 : ((c + random(-0.35, 0.35)) / cols) * 100,
+    r === 0 || r === rows ? (r / rows) * 100 : ((r + random(-0.3, 0.3)) / rows) * 100
+  ]
+  const corners = Array.from({ length: rows + 1 }, (_, r) => Array.from({ length: cols + 1 }, (_, c) => corner(c, r)))
+
+  let longest = 0
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const points = [corners[r][c], corners[r][c + 1], corners[r + 1][c + 1], corners[r + 1][c]]
+      const shard = node.cloneNode(true) as HTMLElement
+      shard.classList.remove('leaving', 'gone', 'sliding', 'entering', 'dragging', 'drop-onto')
+      shard.classList.add('shard')
+      shard.style.width = `${box.width}px`
+      shard.style.height = `${box.height}px`
+      shard.style.clipPath = `polygon(${points.map(([x, y]) => `${x}% ${y}%`).join(', ')})`
+      layer.append(shard)
+
+      // Each piece flies away from the middle of the tab, and the tear runs
+      // from the close button's end to the other.
+      const cx = points.reduce((sum, [x]) => sum + x, 0) / 4
+      const cy = points.reduce((sum, [, y]) => sum + y, 0) / 4
+      const duration = random(650, 1000)
+      const delay = ((cols - 1 - c) / cols) * 110
+      longest = Math.max(longest, duration + delay)
+      shard.animate(
+        [
+          { transform: 'none', opacity: 1 },
+          {
+            transform: `translate(${((cx - 50) / 50) * random(14, 34)}px, ${((cy - 50) / 50) * random(6, 14) + random(4, 14)}px) rotate(${random(-28, 28)}deg) scale(${random(0.55, 0.8)})`,
+            opacity: 0
+          }
+        ],
+        { duration, delay, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'both' }
+      )
+    }
+  }
+
+  // Dust, in the tab's own text colour, drifting up and away a while longer.
+  const colour = getComputedStyle(node).color
+  for (let i = 0; i < cols * 5; i++) {
+    const mote = document.createElement('i')
+    mote.className = 'mote'
+    const size = random(1.5, 3.5)
+    mote.style.width = `${size}px`
+    mote.style.height = `${size}px`
+    mote.style.left = `${random(0, box.width)}px`
+    mote.style.top = `${random(box.height * 0.2, box.height * 0.9)}px`
+    mote.style.background = colour
+    layer.append(mote)
+
+    const duration = random(1200, 2400)
+    const delay = random(80, 500)
+    longest = Math.max(longest, duration + delay)
+    mote.animate(
+      [
+        { transform: 'translate(0, 0)', opacity: 0 },
+        { transform: `translate(${random(-6, 6)}px, ${random(-4, -1)}px)`, opacity: random(0.5, 0.9), offset: 0.15 },
+        { transform: `translate(${random(-34, 34)}px, ${random(-26, -8)}px)`, opacity: 0 }
+      ],
+      { duration, delay, easing: 'ease-out', fill: 'both' }
+    )
+  }
+
+  window.setTimeout(() => layer.remove(), longest + 100)
+}
+
 function buildGroupChip(group: TabGroup): HTMLElement {
   const chip = document.createElement('button')
   chip.className = 'group-chip'
@@ -468,18 +571,24 @@ function renderTabs(): void {
     if (openGroupId === id) closeGroupPanel()
   }
 
-  // Tabs that have gone slide out where they stand while the rest wait; only
-  // then does the gap close. Closing tab 3 used to set every tab moving at
-  // once, because the strip re-shared its width the moment the tab was gone.
+  // A closed tab comes apart where it stands while the rest wait; only then
+  // does the gap close. It keeps its place in the strip on the way out — see
+  // `departing` — or the reordering below leaves it at the far left.
   for (const [id, node] of [...tabNodes]) {
     if (wanted.has(id)) continue
     tabNodes.delete(id)
+    departing.set(node, previousStaying(node))
+    // Dragged off to another window, it has moved, not closed.
+    if (id !== draggingId && !node.classList.contains('tearing')) shatter(node)
     node.classList.add('leaving')
     window.setTimeout(() => {
       node.classList.add('gone')
       layoutTabs()
-    }, 150)
-    window.setTimeout(() => node.remove(), 400)
+    }, 360)
+    window.setTimeout(() => {
+      departing.delete(node)
+      node.remove()
+    }, 600)
   }
 
   for (const tab of state.tabs) {
@@ -522,6 +631,13 @@ function renderTabs(): void {
     node.classList.toggle('collapsed', Boolean(group?.collapsed))
 
     tabsEl.append(node)
+  }
+
+  // Everything staying was just appended in order, which moved it all past the
+  // tabs on their way out. Put each of those back after its old neighbour.
+  for (const [node, after] of departing) {
+    if (after?.parentElement === tabsEl) after.after(node)
+    else tabsEl.prepend(node)
   }
 
   layoutTabs()

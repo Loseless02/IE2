@@ -192,16 +192,33 @@ body {
   transform: translateY(10px) scale(0.92);
 }
 
-/* On the way out it slides left and fades where it stands, keeping its width
-   so nothing else moves; then it folds to nothing and the neighbours close
-   the gap. */
+/* On the way out its shards take its place (see .shatter), so the tab itself
+   vanishes at once but keeps its width, and nothing else moves while it comes
+   apart; then it folds to nothing and the neighbours close the gap. */
 .tab.leaving {
-  opacity: 0;
-  transform: translateX(-18px);
+  visibility: hidden;
   pointer-events: none;
-  transition:
-    opacity 150ms ease-in,
-    transform 150ms ease-in;
+}
+
+/* The pieces of a closed tab, over the strip and above everything in it. */
+.shatter {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.shatter .shard {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  transition: none;
+  will-change: transform, opacity;
+}
+
+.shatter .mote {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform, opacity;
 }
 
 .tab.leaving.gone {
