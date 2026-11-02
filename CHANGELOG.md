@@ -4,6 +4,14 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.3
+
+- Fixed: sign-in pages — Amazon's among them, its two-step check too — threw
+  the Windows passkey window up as soon as they opened, before anything was
+  clicked. Now a passkey is offered as "Use a passkey" in the list under the
+  login field, and Windows only asks once you pick it. A site's own passkey
+  button still works straight away
+
 ## 0.10.2
 
 - Ctrl + mouse wheel makes pages bigger and smaller

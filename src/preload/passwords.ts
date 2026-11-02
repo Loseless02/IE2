@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron'
+import { ipcRenderer, webFrame } from 'electron'
 
 /**
  * The password manager's eyes and hands inside a web page.
@@ -28,7 +28,7 @@ const TEXTLIKE = 'input[type="email"], input[type="text"], input[type="tel"], in
 
 /** Says what it is for: a username or email, by its autocomplete hint, type or name. */
 function looksLikeUsername(input: HTMLInputElement): boolean {
-  if (/username|email/i.test(input.autocomplete || '')) return true
+  if (/username|email|webauthn/i.test(input.autocomplete || '')) return true
   if (input.type === 'email') return true
   return /user|email|login|identifier|account/i.test(`${input.name} ${input.id}`)
 }
@@ -126,6 +126,83 @@ function fillLogin(login: { username: string; password: string }): 'both' | 'use
 
   if (password) return wroteUsername ? 'both' : 'password'
   return wroteUsername ? 'username' : 'none'
+}
+
+// --- passkeys ---------------------------------------------------------------
+//
+// Sign-in pages ask on load for passkeys "conditionally": a browser is meant to
+// offer them quietly in its autofill list and wait. Electron has no such list
+// and hands the request straight to Windows, which throws its passkey dialog
+// over the page before anything was clicked. So in the page's own world the
+// conditional request is held — still pending, as the site expects — and the
+// login list offers "Use a passkey". Choosing it makes the real request, and
+// only then does Windows ask. Some pages — Amazon's two-step check — make an
+// ordinary request on load, with nothing clicked; that is held the same way.
+// A passkey button on the site itself comes with a click, and goes through.
+
+const PASSKEY_SHIM = `(() => {
+  const credentials = navigator.credentials
+  if (!credentials || typeof credentials.get !== 'function') return
+  const get = credentials.get.bind(credentials)
+  let waiting = null
+  const say = (name) => document.dispatchEvent(new Event(name))
+  // Asked for means a real click or key press on this page in the last few
+  // seconds. Not navigator.userActivation: a page opened by a click arrives
+  // already "activated", which is exactly the case to hold.
+  let lastGesture = -Infinity
+  const gesture = (event) => { if (event.isTrusted) lastGesture = performance.now() }
+  addEventListener('pointerdown', gesture, true)
+  addEventListener('keydown', gesture, true)
+  const unasked = () => performance.now() - lastGesture > 5000
+  credentials.get = function (options) {
+    if (!options || !options.publicKey) return get(options)
+    if (options.mediation !== 'conditional' && !unasked()) return get(options)
+    const signal = options.signal
+    if (signal && signal.aborted) return Promise.reject(signal.reason)
+    return new Promise((resolve, reject) => {
+      const entry = { options, resolve, reject }
+      waiting = entry
+      if (signal) signal.addEventListener('abort', () => {
+        if (waiting !== entry) return
+        waiting = null
+        reject(signal.reason)
+        say('ie2-passkey-withdrawn')
+      }, { once: true })
+      say('ie2-passkey-offered')
+    })
+  }
+  document.addEventListener('ie2-passkey-use', () => {
+    const entry = waiting
+    if (!entry) return
+    waiting = null
+    const { mediation, ...rest } = entry.options
+    get(rest).then(entry.resolve, entry.reject)
+  })
+})()`
+
+/** The page is waiting on a passkey, held back for the login list to offer. */
+let passkeyWaiting = false
+
+function watchPasskeys(): void {
+  try {
+    void webFrame.executeJavaScript(PASSKEY_SHIM, true)
+  } catch {
+    // Without it the site's request reaches Windows as before.
+    return
+  }
+  document.addEventListener('ie2-passkey-offered', () => {
+    passkeyWaiting = true
+    // Asked after the field already had focus: show the list now.
+    const focused = document.activeElement
+    if (focused instanceof HTMLInputElement && focused !== anchor && isLoginField(focused)) void openList(focused)
+  })
+  document.addEventListener('ie2-passkey-withdrawn', () => (passkeyWaiting = false))
+}
+
+function usePasskey(): void {
+  closeList()
+  passkeyWaiting = false
+  document.dispatchEvent(new Event('ie2-passkey-use'))
 }
 
 // --- the list under a login field ---------------------------------------------
@@ -270,7 +347,7 @@ function closeList(): void {
 async function openList(input: HTMLInputElement): Promise<void> {
   const mine = ++generation
   const found = (await ipcRenderer.invoke('pw:suggest')) as Suggestions | null
-  if (mine !== generation || document.activeElement !== input || !found) return
+  if (mine !== generation || document.activeElement !== input || (!found && !passkeyWaiting)) return
 
   anchor = input
   lastField = input
@@ -288,19 +365,23 @@ async function openList(input: HTMLInputElement): Promise<void> {
     void ipcRenderer.invoke('pw:open-panel')
   }
 
-  if (found.vault === 'unlocked') {
+  if (found?.vault === 'unlocked') {
     for (const account of found.accounts) {
       addRow(list, account.username || '(no username)', '••••••••', choose(account.id))
     }
-  } else {
+  } else if (found) {
     const what = `${found.count} saved login${found.count === 1 ? '' : 's'} for this site`
     addRow(list, 'Unlock IE2 passwords', what, openPanel, true)
   }
 
-  const rule = document.createElement('div')
-  rule.className = 'rule'
-  list.append(rule)
-  addRow(list, 'Saved passwords…', '', openPanel)
+  if (passkeyWaiting) addRow(list, 'Use a passkey', 'Phone, security key or Windows Hello', usePasskey, true)
+
+  if (found) {
+    const rule = document.createElement('div')
+    rule.className = 'rule'
+    list.append(rule)
+    addRow(list, 'Saved passwords…', '', openPanel)
+  }
 
   place()
 }
@@ -368,6 +449,9 @@ export function watchForLogins(): void {
       pending = window.setTimeout(lookForForms, 400)
     }).observe(document.documentElement, { childList: true, subtree: true })
   }
+
+  // First, before the page's own scripts take a reference to credentials.get.
+  watchPasskeys()
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true })
   else start()
