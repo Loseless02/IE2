@@ -376,8 +376,9 @@ function createWindow(startUrl?: string, torn?: TornTab): void {
   // Only the last window standing writes the session, or closing one window
   // would replace the restore list with just that window's tabs.
   win.on('close', () => {
-    // A quit started by the app itself has already saved the session, and has
-    // closed the database by the time the windows close. See before-quit.
+    // A quit started by the app itself has already saved the session, from the
+    // window last in use; one by one, the windows closing would each overwrite
+    // it with less. See before-quit.
     if (quitting || shells.size !== 1) return
     const snapshot = shell.tabs.snapshot()
     saveSession(snapshot.tabs, snapshot.activeIndex, snapshot.groups)
@@ -1988,10 +1989,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-/**
- * Set once the app has started quitting, so nothing writes to the database
- * after it is closed.
- */
+/** Set once the app has started quitting, and the session has been saved. */
 let quitting = false
 
 app.on('before-quit', () => {
@@ -2011,5 +2009,16 @@ app.on('before-quit', () => {
 
   quitting = true
   flush()
+})
+
+// The database closes last, once every window has. Even so the tabs' pages
+// outlive their windows by a moment, and a page still loading reports its
+// title, icon and blocked-ad count into a closed database. Each of those was a
+// "database is not open" error dialog — a stack of them over Restart to update.
+// From here the app is certainly going, so a part of it that trips while being
+// torn down has nothing left to tell anyone.
+app.on('will-quit', () => {
+  flush()
   closeDb()
+  process.on('uncaughtException', () => {})
 })

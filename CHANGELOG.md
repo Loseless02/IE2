@@ -4,6 +4,12 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.4
+
+- Fixed: Restart to update could stack up "A JavaScript error occurred —
+  database is not open" windows while IE2 closed, one for every page still
+  loading. Quitting is quiet again, and the tabs still come back
+
 ## 0.10.3
 
 - Fixed: sign-in pages — Amazon's among them, its two-step check too — threw
