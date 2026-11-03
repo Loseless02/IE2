@@ -4,6 +4,15 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.8
+
+- A YouTube video stuck on its loading circle gets itself going: after 15
+  seconds of spinning with no ad playing, the page reloads once; if it is
+  still stuck, it reloads once more without the ad blocker's YouTube scripts
+  (ordinary blocking stays on), so the video plays — sometimes after an ad.
+  YouTube keeps changing how it serves ads, and the blocking lists sometimes
+  fall behind; this is what keeps that from leaving you with a dead video
+
 ## 0.10.7
 
 - Fullscreen video is really fullscreen: in any player on any site, embedded

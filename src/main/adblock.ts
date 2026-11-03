@@ -23,6 +23,12 @@ let pendingThirdParty = 0
 /** Blocked per tab, keyed by webContents id, reset on each navigation. */
 const perTab = new Map<number, number>()
 
+/**
+ * Tabs whose next page load goes without scriptlets, until when: a YouTube
+ * video that stayed stuck after a reload gets one more without them.
+ */
+const skipScriptletsOnce = new Map<number, number>()
+
 /** Which domains are doing the most work to reach you, this session. */
 const perDomain = new Map<string, number>()
 
@@ -127,7 +133,22 @@ export async function initAdblock(): Promise<void> {
   // Synchronous on purpose: the preload asking this question is racing the
   // page's own scripts, and an async answer loses that race every time.
   ipcMain.on('ie2:scriptlets', (event, url: string) => {
+    // A page that stalled twice reloads once without them; see the preload.
+    const top = event.senderFrame?.parent === null
+    const skip = skipScriptletsOnce.get(event.sender.id)
+    if (top && skip !== undefined) {
+      skipScriptletsOnce.delete(event.sender.id)
+      if (skip > Date.now()) {
+        event.returnValue = []
+        return
+      }
+    }
     event.returnValue = typeof url === 'string' ? scriptletsFor(url) : []
+  })
+
+  ipcMain.handle('adblock:skip-scriptlets-once', (event) => {
+    if (event.senderFrame?.parent !== null) return
+    skipScriptletsOnce.set(event.sender.id, Date.now() + 30_000)
   })
 
   enabled = getSettings().blockAds

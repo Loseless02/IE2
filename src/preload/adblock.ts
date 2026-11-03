@@ -54,4 +54,77 @@ if (window.location.protocol !== 'ie2:' && window.location.protocol !== 'devtool
     // Blocking is a courtesy; a page that cannot reach the main process still
     // has to load.
   }
+
+  if (window.top === window && /(^|\.)youtube\.com$/.test(window.location.hostname)) watchYouTubeStalls()
+}
+
+/**
+ * A YouTube video that never starts.
+ *
+ * YouTube changes how it serves ads all the time, and the filter lists'
+ * YouTube scriptlets chase it. When they fall behind, the player can sit on
+ * its spinner for good — waiting for an ad that was taken away, or reloading
+ * itself over and over. Measured with current lists, removing the ads costs a
+ * few seconds' start-up; when it costs more than that, something is broken.
+ *
+ * So: a video still on the spinner after 15 visible seconds, with no ad
+ * playing, gets its page reloaded once. Still stuck, it is reloaded once more
+ * without the YouTube scriptlets — network blocking stays on — because a video
+ * that plays, possibly after an ad, beats one that never does.
+ */
+const STALL_MS = 15_000
+const RESCUE_KEY = 'ie2-youtube-rescue'
+/** A rescue counts for this long; after that the same video starts afresh. */
+const RESCUE_MEMORY_MS = 2 * 60_000
+
+function watchYouTubeStalls(): void {
+  let href = ''
+  let stuckFor = 0
+  let last = Date.now()
+
+  const rescued = (): { href: string; stage: number; at: number } | null => {
+    try {
+      const value = JSON.parse(sessionStorage.getItem(RESCUE_KEY) ?? 'null')
+      return value && value.href === href && Date.now() - value.at < RESCUE_MEMORY_MS ? value : null
+    } catch {
+      return null
+    }
+  }
+
+  window.setInterval(() => {
+    const now = Date.now()
+    const elapsed = now - last
+    last = now
+
+    if (window.location.href !== href) {
+      href = window.location.href
+      stuckFor = 0
+    }
+    if (!window.location.pathname.startsWith('/watch') || document.visibilityState !== 'visible') return
+
+    const video = document.querySelector<HTMLVideoElement>('#movie_player video')
+    const player = document.getElementById('movie_player')
+    const spinner = player?.querySelector<HTMLElement>('.ytp-spinner')
+    const spinning = Boolean(spinner && getComputedStyle(spinner).display !== 'none')
+    const ad = Boolean(player?.classList.contains('ad-showing'))
+    const stuck = Boolean(video) && spinning && !ad && (video?.currentTime ?? 0) < 0.5
+
+    stuckFor = stuck ? stuckFor + elapsed : 0
+    if (stuckFor < STALL_MS) return
+    stuckFor = 0
+
+    const before = rescued()
+    if (before && before.stage >= 2) return
+    const stage = before ? 2 : 1
+    try {
+      sessionStorage.setItem(RESCUE_KEY, JSON.stringify({ href, stage, at: now }))
+    } catch {
+      return
+    }
+    if (stage === 1) {
+      window.location.reload()
+      return
+    }
+    void ipcRenderer.invoke('adblock:skip-scriptlets-once').finally(() => window.location.reload())
+  }, 1000)
 }
