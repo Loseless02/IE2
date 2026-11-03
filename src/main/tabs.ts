@@ -71,6 +71,26 @@ const PAGE_SCROLLBAR_CSS = `
  */
 const OMNIBOX_GRACE_MS = 2500
 
+/** A world of our own to read the page from, where its scripts cannot interfere. */
+const PROBE_WORLD = 1009
+
+/**
+ * The colour a page paints itself, as #rrggbb: the root's background, else the
+ * body's — the same choice the browser makes for the canvas. Empty for a page
+ * that sets neither, which shows the default white.
+ */
+const PAGE_BACKGROUND_PROBE = `(() => {
+  const solid = (element) => {
+    if (!element) return ''
+    const match = getComputedStyle(element).backgroundColor.match(/rgba?\\(([^)]+)\\)/)
+    if (!match) return ''
+    const [r, g, b, a = '1'] = match[1].split(',').map((part) => part.trim())
+    if (parseFloat(a) < 0.5) return ''
+    return '#' + [r, g, b].map((part) => Math.round(parseFloat(part)).toString(16).padStart(2, '0')).join('')
+  }
+  return solid(document.documentElement) || solid(document.body) || '#ffffff'
+})()`
+
 /**
  * Tab ids are unique across every window, not per window, so a tab dragged
  * into another window keeps its id and cannot collide with one already there.
@@ -272,6 +292,11 @@ export class TabManager {
   private insetRight = 0
   private frame = 0
 
+  /** The tab whose page has gone fullscreen — a video player, usually — if any. */
+  private fullscreenId: number | null = null
+  /** The window was fullscreen already (F11) before the page asked, so it stays so. */
+  private windowWasFullScreen = false
+
   /** Tab groups, keyed by id. Strip order is derived from the tabs themselves. */
   private groups = new Map<number, TabGroup>()
   private nextGroupId = 1
@@ -287,6 +312,46 @@ export class TabManager {
     private onOpenWindow: (url: string) => void
   ) {
     this.window.on('resize', () => this.layout())
+    // The window taken out of fullscreen some other way takes the page with it.
+    this.window.on('leave-full-screen', () => {
+      if (this.fullscreenId !== null) this.exitPageFullscreen()
+    })
+  }
+
+  /**
+   * A page asked for fullscreen: any player on any site, or any element at all
+   * — the request every web video player makes. The window goes fullscreen and
+   * the page covers all of it: no tabs, no toolbar, no frame round it. Only the
+   * tab in front; one behind has no business filling the screen.
+   */
+  private enterPageFullscreen(id: number): void {
+    const tab = this.tabs.find((t) => t.id === id)
+    if (!tab || id !== this.activeId) return
+    if (this.fullscreenId === null) this.windowWasFullScreen = this.window.isFullScreen()
+    this.fullscreenId = id
+    if (!this.window.isFullScreen()) this.window.setFullScreen(true)
+    // Above the browser's own views, which would otherwise still cover its top.
+    this.window.contentView.addChildView(tab.view)
+    this.layout()
+  }
+
+  /** The page came out of fullscreen: the browser comes back as it was. */
+  private leavePageFullscreen(id?: number): void {
+    if (this.fullscreenId === null || (id !== undefined && id !== this.fullscreenId)) return
+    this.fullscreenId = null
+    if (!this.windowWasFullScreen && this.window.isFullScreen()) this.window.setFullScreen(false)
+    this.raiseChrome()
+    this.layout()
+  }
+
+  /** Ask the fullscreen page to come out of it, as its own exit button would. */
+  private exitPageFullscreen(): void {
+    const tab = this.tabs.find((t) => t.id === this.fullscreenId)
+    const wc = tab?.view.webContents
+    if (wc && !wc.isDestroyed()) {
+      void wc.executeJavaScript('document.exitFullscreen?.().catch(() => {})', true).catch(() => undefined)
+    }
+    this.leavePageFullscreen()
   }
 
   createTab(url: string = HOME_URL, options: TabOptions = {}): number {
@@ -404,6 +469,7 @@ export class TabManager {
 
     // Closing either pane ends the split rather than leaving a gap.
     if (this.splitId === id) this.splitId = null
+    if (this.fullscreenId === id) this.leavePageFullscreen(id)
 
     const [tab] = this.tabs.splice(index, 1)
     this.rememberClosed(tab)
@@ -448,6 +514,9 @@ export class TabManager {
   activate(id: number, options: { focusPage?: boolean } = {}): void {
     const tab = this.tabs.find((t) => t.id === id)
     if (!tab) return
+
+    // Switching away from a fullscreen video ends its fullscreen.
+    if (this.fullscreenId !== null && this.fullscreenId !== id) this.exitPageFullscreen()
 
     this.activeId = id
     tab.lastActiveAt = Date.now()
@@ -804,6 +873,14 @@ export class TabManager {
     const width = Math.max(0, bounds.width - this.insetRight - frame * 2)
     const top = this.insetTop
     const usable = Math.max(0, bounds.height - top - frame)
+    // A fullscreen page has the whole window, edge to edge.
+    const fullscreen = this.tabs.find((t) => t.id === this.fullscreenId)
+    if (fullscreen) {
+      fullscreen.view.setBorderRadius(0)
+      fullscreen.view.setBounds({ x: 0, y: 0, width: bounds.width, height: bounds.height })
+      return
+    }
+
     // The page's corners follow the interface's: Settings → Appearance → Corners.
     const radius = frame > 0 ? { square: 3, normal: 10, round: 16 }[getSettings().corners] ?? 10 : 0
 
@@ -1270,6 +1347,10 @@ export class TabManager {
 
     // Browser shortcuts, claimed before the page can act on them.
     wc.on('before-input-event', (event, input) => {
+      // Esc always gets out of a fullscreen page, whatever the player does with it.
+      if (input.type === 'keyDown' && input.key === 'Escape' && owner().fullscreenId === tab.id) {
+        owner().exitPageFullscreen()
+      }
       const action = shortcutFor(input)
       if (!action) return
       event.preventDefault()
@@ -1280,6 +1361,36 @@ export class TabManager {
     // through the same steps as Ctrl+plus keeps the toolbar's level in step.
     wc.on('zoom-changed', (_event, direction) => {
       if (owner().activeId === tab.id) owner().onShortcut(direction === 'in' ? 'zoom-in' : 'zoom-out')
+    })
+
+    // A video player — or anything — going fullscreen, in the page itself or
+    // in a frame inside it.
+    wc.on('enter-html-full-screen', () => owner().enterPageFullscreen(tab.id))
+    wc.on('leave-html-full-screen', () => owner().leavePageFullscreen(tab.id))
+
+    // Behind the page is the view's own background, and with the page frame on
+    // it shows at the rounded corners and along the edges, where the page does
+    // not quite reach: white specks round a dark site. So once the page has
+    // drawn, the view takes the page's own background colour — and goes back
+    // to the default when the next page starts loading.
+    const matchBackground = (): void => {
+      if (wc.isDestroyed()) return
+      void wc
+        .executeJavaScriptInIsolatedWorld(PROBE_WORLD, [{ code: PAGE_BACKGROUND_PROBE }])
+        .then((colour: unknown) => {
+          if (typeof colour === 'string' && /^#[0-9a-f]{6}$/.test(colour) && !wc.isDestroyed()) {
+            tab.view.setBackgroundColor(colour)
+          }
+        })
+        .catch(() => undefined)
+    }
+    wc.on('did-finish-load', () => {
+      matchBackground()
+      // Sites that pick their theme in script — YouTube's dark one — settle later.
+      setTimeout(matchBackground, 1500)
+    })
+    wc.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && !details.isSameDocument) tab.view.setBackgroundColor(pageBackground())
     })
 
     // The single gate on writing anything down. An amnesia tab never records.

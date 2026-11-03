@@ -4,6 +4,15 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.7
+
+- Fullscreen video is really fullscreen: in any player on any site, embedded
+  ones too, the video fills the whole screen with no tabs, toolbar or frame
+  left round it. Esc, the player's own button, or switching tabs brings the
+  browser back as it was
+- Fixed: white specks at the rounded corners of the page frame on dark sites.
+  The page's own colour shows there now, so the corners blend into the frame
+
 ## 0.10.6
 
 - Sign-in forms that sit in a frame inside the page — Apple's does — now get

@@ -30,6 +30,19 @@ const topFrame = window.top === window
 if (window.location.protocol === 'https:' || window.location.protocol === 'http:') {
   watchForLogins()
   if (topFrame) watchAudio()
+
+  // Esc leaves a fullscreen video, whatever the player does with the key —
+  // in the page, or in a player embedded in it. First in line, before the
+  // page's own handlers can swallow it.
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key === 'Escape' && event.isTrusted && document.fullscreenElement) {
+        void document.exitFullscreen().catch(() => undefined)
+      }
+    },
+    true
+  )
 }
 
 // Our own pages, and only as the page itself: framed inside a website, an
