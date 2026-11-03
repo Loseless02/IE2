@@ -35,6 +35,7 @@ import { ALL_PARTITIONS, PARTITION } from './partitions'
 import { buildSuggestions, engineSuggestions } from './suggest'
 import {
   handleInternalProtocol,
+  isInternalFrame,
   isInternalUrl,
   listImages,
   registerInternalScheme
@@ -514,6 +515,8 @@ function createAppWindow(url: string): void {
     webPreferences: {
       partition: PARTITION,
       preload: join(__dirname, '../preload/internal.js'),
+      // Sign-in forms in embedded frames, as in a tab.
+      nodeIntegrationInSubFrames: true,
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -1157,7 +1160,7 @@ function dropTab(source: Shell, id: number, x: number, y: number): boolean {
 function registerInternalIpc(): void {
   const fromInternalPage = <A extends unknown[], R>(handler: (...args: A) => R) => {
     return (event: Electron.IpcMainInvokeEvent, ...args: A): R | null => {
-      if (!isInternalUrl(event.senderFrame?.url)) return null
+      if (!isInternalFrame(event.senderFrame)) return null
       return handler(...args)
     }
   }
@@ -1165,7 +1168,7 @@ function registerInternalIpc(): void {
   // Cookie count comes from the session rather than the database, so this one
   // handler is async and merges the two.
   ipcMain.handle('internal:stats', async (event: Electron.IpcMainInvokeEvent) => {
-    if (!isInternalUrl(event.senderFrame?.url)) return null
+    if (!isInternalFrame(event.senderFrame)) return null
 
     const stats = recallStats()
     try {
@@ -1308,7 +1311,7 @@ function registerInternalIpc(): void {
   // Picking a wallpaper or folder goes through the OS dialog, so the page never
   // sees a path it did not get from the user.
   ipcMain.handle('internal:pick-image', async (event: Electron.IpcMainInvokeEvent) => {
-    if (!isInternalUrl(event.senderFrame?.url)) return null
+    if (!isInternalFrame(event.senderFrame)) return null
     const result = await dialog.showOpenDialog({
       title: 'Choose a wallpaper',
       properties: ['openFile'],
@@ -1318,7 +1321,7 @@ function registerInternalIpc(): void {
   })
 
   ipcMain.handle('internal:pick-folder', async (event: Electron.IpcMainInvokeEvent) => {
-    if (!isInternalUrl(event.senderFrame?.url)) return null
+    if (!isInternalFrame(event.senderFrame)) return null
     const result = await dialog.showOpenDialog({
       title: 'Choose a wallpaper folder',
       properties: ['openDirectory']
@@ -1390,7 +1393,7 @@ function registerInternalIpc(): void {
     fromInternalPage((origin: string, permission: string) => setSitePermission(origin, permission, null))
   )
   ipcMain.handle('internal:sidebar-resize', (event: Electron.IpcMainInvokeEvent, width: number, done: boolean) => {
-    if (!isInternalUrl(event.senderFrame?.url)) return
+    if (!isInternalFrame(event.senderFrame)) return
     const shell = shellOwningSidebar(event.sender.id)
     if (!shell || !Number.isFinite(width)) return
     sidebarWidth = clampSidebar(shell, width)
@@ -1399,7 +1402,7 @@ function registerInternalIpc(): void {
   })
 
   ipcMain.handle('internal:sidebar-close', (event: Electron.IpcMainInvokeEvent) => {
-    if (!isInternalUrl(event.senderFrame?.url)) return
+    if (!isInternalFrame(event.senderFrame)) return
     const shell = shellOwningSidebar(event.sender.id)
     if (shell) toggleSidebar(shell, false)
   })
@@ -1421,7 +1424,7 @@ function registerInternalIpc(): void {
     fromInternalPage((domain: string) => forgetSite(domain))
   )
   ipcMain.handle('internal:open', (event: Electron.IpcMainInvokeEvent, url: string, newTab?: boolean, background?: boolean) => {
-    if (!isInternalUrl(event.senderFrame?.url)) return
+    if (!isInternalFrame(event.senderFrame)) return
     const shell = shellFor(event)
     if (!shell) return
     if (newTab) shell.tabs.createTab(normalizeInput(url), { activate: !background })
@@ -1637,7 +1640,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('internal:reader-article', (event: Electron.IpcMainInvokeEvent) => {
-    if (!isInternalUrl(event.senderFrame?.url)) return null
+    if (!isInternalFrame(event.senderFrame)) return null
     return readerArticles.get(event.sender.id) ?? null
   })
 

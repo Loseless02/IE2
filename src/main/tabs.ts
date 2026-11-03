@@ -297,6 +297,10 @@ export class TabManager {
         partition: amnesia ? AMNESIA_PARTITION : PARTITION,
         // Exposes an API to our own ie2:// pages only, and nothing to the web.
         preload: join(__dirname, '../preload/internal.js'),
+        // Also in embedded frames — no Node, sandboxed like the rest — because
+        // sign-in forms often live in one, and the password manager and the
+        // passkey guard have to be there too.
+        nodeIntegrationInSubFrames: true,
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -1006,6 +1010,7 @@ export class TabManager {
       webPreferences: {
         partition: tab.amnesia ? AMNESIA_PARTITION : PARTITION,
         preload: join(__dirname, '../preload/internal.js'),
+        nodeIntegrationInSubFrames: true,
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,

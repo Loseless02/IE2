@@ -210,7 +210,8 @@ function usePasskey(): void {
 interface Suggestions {
   vault: 'missing' | 'locked' | 'unlocked'
   count: number
-  accounts: { id: number; username: string }[]
+  /** `from`: saved on another address of the same site, named here. */
+  accounts: { id: number; username: string; from?: string }[]
 }
 
 const LIST_CSS = `
@@ -367,7 +368,8 @@ async function openList(input: HTMLInputElement): Promise<void> {
 
   if (found?.vault === 'unlocked') {
     for (const account of found.accounts) {
-      addRow(list, account.username || '(no username)', '••••••••', choose(account.id))
+      if (account.from) addRow(list, account.username || '(no username)', `Saved for ${account.from}`, choose(account.id), true)
+      else addRow(list, account.username || '(no username)', '••••••••', choose(account.id))
     }
   } else if (found) {
     const what = `${found.count} saved login${found.count === 1 ? '' : 's'} for this site`

@@ -1,6 +1,6 @@
 {
   "name": "internet-explorer-2",
-  "version": "0.10.5",
+  "version": "0.10.6",
   "description": "A browser that remembers every page you read",
   "main": "./out/main/index.js",
   "author": "Loseless02",
@@ -37,6 +37,7 @@
     "@ghostery/adblocker-electron": "^2.18.2",
     "electron-chrome-web-store": "0.13.0",
     "electron-updater": "^6.8.9",
-    "qrcode-generator": "^2.0.4"
+    "qrcode-generator": "^2.0.4",
+    "tldts-experimental": "^7.4.10"
   }
 }

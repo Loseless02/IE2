@@ -89,6 +89,16 @@ function pageFile(host: string, path: string): string | null {
 }
 
 /** True for frames we are willing to expose internal APIs to. */
+/**
+ * A sender that may use the internal pages' API: one of our pages, and the
+ * page itself rather than one framed inside a website. Tabs run their preload
+ * in embedded frames too (for the password manager), so the URL alone is not
+ * enough.
+ */
+export function isInternalFrame(frame: Electron.WebFrameMain | null | undefined): boolean {
+  return Boolean(frame && frame.parent === null && isInternalUrl(frame.url))
+}
+
 export function isInternalUrl(url: string | undefined): boolean {
   if (!url) return false
   try {

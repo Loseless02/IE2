@@ -4,6 +4,17 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.6
+
+- Sign-in forms that sit in a frame inside the page — Apple's does — now get
+  the saved-logins list too, and their passkey requests are held back like
+  any other: the Windows passkey window only opens when you pick "Use a
+  passkey" or press the site's own passkey button
+- A login saved on one address of a site is offered on its other addresses,
+  labelled with where it was saved — appleid.apple.com on Apple's other
+  sign-in pages, for one. It goes in only when you pick it, and never into a
+  frame from a different site
+
 ## 0.10.5
 
 - Closing a tab: it tears into pieces where it stands, and a little dust

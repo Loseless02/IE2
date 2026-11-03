@@ -1,8 +1,9 @@
-import { dialog, ipcMain, session, type WebContents } from 'electron'
+import { dialog, ipcMain, session, type WebContents, type WebFrameMain } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
+import { getDomain } from 'tldts-experimental'
 import type { PasswordOffer, PasswordsForPage } from '../shared/types'
 import { AMNESIA_PARTITION } from './partitions'
-import { credentialCount, neverSaveOrigins, setNeverSave } from './db'
+import { credentialCount, credentialRows, neverSaveOrigins, setNeverSave } from './db'
 import { getSettings } from './settings'
 import {
   changeMasterPassword,
@@ -68,6 +69,9 @@ const filling = new Map<number, (result: FillResult) => void>()
  */
 const nextStep = new Map<number, { origin: string; id: number; expires: number }>()
 
+/** The frame in each tab that last showed a login form — often not the page itself. */
+const formFrames = new Map<number, WebFrameMain>()
+
 /** Per-tab state is dropped with the tab. */
 const watched = new Set<number>()
 function watch(tab: WebContents): void {
@@ -77,10 +81,36 @@ function watch(tab: WebContents): void {
   tab.once('destroyed', () => {
     watched.delete(id)
     formsSeen.delete(id)
+    formFrames.delete(id)
     nextStep.delete(id)
     filling.get(id)?.('none')
   })
 }
+
+/**
+ * The site an origin belongs to: apple.com for appleid.apple.com and
+ * idmsa.apple.com alike. An address with no registrable domain — an IP,
+ * localhost — is its own site.
+ */
+function siteOf(origin: string): string {
+  const { protocol, hostname } = new URL(origin)
+  return `${protocol}//${getDomain(hostname) ?? hostname}`
+}
+
+/**
+ * A login saved on one address of a site may be offered on another — Apple
+ * signs in on several — but only ever within the same site, and the same
+ * scheme. It is offered, never filled by itself.
+ */
+function sameSite(a: string, b: string): boolean {
+  try {
+    return siteOf(a) === siteOf(b)
+  } catch {
+    return false
+  }
+}
+
+const hostOf = (origin: string): string => new URL(origin).host
 
 function originOf(url: string | undefined): string | null {
   try {
@@ -105,13 +135,28 @@ function cleanLogin(value: unknown): { username: string; password: string } | nu
 }
 
 /**
- * Send a login to the page and wait for what it really filled — a page with no
- * field to put it in must not be reported as filled.
+ * Where in a tab a login goes when the browser's own panel asks: the frame
+ * that showed a login form, if it is on the login's site, else any frame on
+ * its exact address, else the page itself.
  */
-function fill(tab: WebContents, id: number): Promise<boolean> {
+function frameFor(tab: WebContents, loginOrigin: string): WebFrameMain {
+  const shown = formFrames.get(tab.id)
+  const shownOrigin = shown && !shown.detached ? originOf(shown.url) : null
+  if (shown && shownOrigin && sameSite(shownOrigin, loginOrigin)) return shown
+  return tab.mainFrame.framesInSubtree.find((frame) => originOf(frame.url) === loginOrigin) ?? tab.mainFrame
+}
+
+/**
+ * Send a login to a frame and wait for what it really filled — a page with no
+ * field to put it in must not be reported as filled. The frame must be on the
+ * login's own site: never into an embedded frame from somewhere else.
+ */
+function fill(tab: WebContents, id: number, into?: WebFrameMain | null): Promise<boolean> {
   const login = readCredential(id)
-  const origin = originOf(tab.getURL())
-  if (!login || !origin || origin !== login.origin) return Promise.resolve(false)
+  if (!login) return Promise.resolve(false)
+  const frame = into ?? frameFor(tab, login.origin)
+  const origin = frame.detached ? null : originOf(frame.url)
+  if (!origin || !sameSite(origin, login.origin)) return Promise.resolve(false)
   watch(tab)
   filling.get(tab.id)?.('none')
 
@@ -126,14 +171,20 @@ function fill(tab: WebContents, id: number): Promise<boolean> {
     }
     const timer = setTimeout(() => done('none'), 2000)
     filling.set(tab.id, done)
-    tab.mainFrame.send('pw:fill', { username: login.username, password: login.password })
+    try {
+      frame.send('pw:fill', { username: login.username, password: login.password })
+    } catch {
+      done('none')
+    }
   })
 }
 
-/** The top frame of a web page, and its origin — or null for anything else. */
-function topFrameOrigin(event: Electron.IpcMainInvokeEvent): string | null {
-  if (!event.senderFrame || event.senderFrame.parent !== null) return null
-  return originOf(event.senderFrame.url)
+/**
+ * The origin of the frame a page-side message came from — the page itself or
+ * a frame embedded in it — or null for anything that is not a web page.
+ */
+function senderOrigin(event: Electron.IpcMainInvokeEvent): string | null {
+  return event.senderFrame ? originOf(event.senderFrame.url) : null
 }
 
 export function registerPasswordIpc(hooks: Hooks): void {
@@ -146,55 +197,64 @@ export function registerPasswordIpc(hooks: Hooks): void {
 
   // --- from pages ---
 
+  // Every frame reports, not only the page: sign-in forms often live in an
+  // embedded frame (Apple's does), and a login belongs to that frame's own
+  // address — the one the password is typed into.
   ipcMain.handle('pw:form-found', (event) => {
-    // Top frame only: a login form inside an embedded frame is not this site's.
-    if (!event.senderFrame || event.senderFrame.parent !== null) return
-    const origin = originOf(event.senderFrame?.url)
-    if (!origin) return
+    const origin = senderOrigin(event)
+    if (!origin || !event.senderFrame) return
     watch(event.sender)
-    formsSeen.set(event.sender.id, origin)
+    formFrames.set(event.sender.id, event.senderFrame)
+    if (event.senderFrame.parent === null) formsSeen.set(event.sender.id, origin)
 
     // The second page of an email-first sign-in: the password of the login
     // whose username was just filled.
     const step = nextStep.get(event.sender.id)
     if (step && step.origin === origin && step.expires > Date.now() && vaultUnlocked()) {
-      void fill(event.sender, step.id)
+      void fill(event.sender, step.id, event.senderFrame)
     } else if (vaultUnlocked() && getSettings().autofillPasswords) {
-      // Unlocked, one login for this site, and autofill on: fill it now.
+      // Unlocked, one login saved for exactly this address, and autofill on:
+      // fill it now. Logins from elsewhere on the site wait to be picked.
       const accounts = credentialsFor(origin)
-      if (accounts.length === 1) void fill(event.sender, accounts[0].id)
+      if (accounts.length === 1) void fill(event.sender, accounts[0].id, event.senderFrame)
     }
     tell()
   })
 
   ipcMain.handle('pw:fill-result', (event, result: unknown) => {
-    if (!topFrameOrigin(event)) return
+    if (!senderOrigin(event)) return
     const known: FillResult[] = ['both', 'username', 'password', 'none']
     filling.get(event.sender.id)?.(known.includes(result as FillResult) ? (result as FillResult) : 'none')
   })
 
   // The list under a login field: usernames only. Passwords never go to the
-  // page except by being filled into its fields.
+  // page except by being filled into its fields. Logins for exactly this
+  // address come first; those saved elsewhere on the same site follow, with
+  // where they were saved.
   ipcMain.handle('pw:suggest', (event) => {
-    const origin = topFrameOrigin(event)
+    const origin = senderOrigin(event)
     if (!origin) return null
-    const count = credentialCount(origin)
+    const related = credentialRows().filter((row) => row.origin !== origin && sameSite(row.origin, origin))
+    const count = credentialCount(origin) + related.length
     if (count === 0) return null
-    return {
-      vault: vaultState(),
-      count,
-      accounts: credentialsFor(origin).map(({ id, username }) => ({ id, username }))
-    }
+
+    const exact = credentialsFor(origin).map(({ id, username }) => ({ id, username }))
+    const elsewhere = vaultUnlocked()
+      ? listCredentials()
+          .filter((entry) => entry.origin !== origin && sameSite(entry.origin, origin))
+          .map(({ id, username, origin: from }) => ({ id, username, from: hostOf(from) }))
+      : []
+    return { vault: vaultState(), count, accounts: [...exact, ...elsewhere] }
   })
 
   ipcMain.handle('pw:fill-mine', (event, id: unknown) => {
-    if (!topFrameOrigin(event)) return false
-    return fill(event.sender, Number(id))
+    if (!senderOrigin(event)) return false
+    return fill(event.sender, Number(id), event.senderFrame)
   })
 
   // Locked: unlocking happens in the browser's own panel, never in the page.
   ipcMain.handle('pw:open-panel', (event) => {
-    if (!topFrameOrigin(event)) return
+    if (!senderOrigin(event)) return
     const chrome = hooks.chromeFor(event.sender)
     if (!chrome || chrome.isDestroyed() || hooks.activeTabFor(chrome) !== event.sender) return
     chrome.focus()
@@ -202,9 +262,8 @@ export function registerPasswordIpc(hooks: Hooks): void {
   })
 
   ipcMain.handle('pw:submitted', (event, value: unknown) => {
-    // Top frame only: a login form inside an embedded frame is not this site's.
-    if (!event.senderFrame || event.senderFrame.parent !== null) return
-    const origin = originOf(event.senderFrame?.url)
+    // Saved under the address of the frame the password was typed into.
+    const origin = senderOrigin(event)
     const login = cleanLogin(value)
     if (!origin || !login) return
 
@@ -275,12 +334,16 @@ export function registerPasswordIpc(hooks: Hooks): void {
     const tab = hooks.activeTabFor(event.sender)
     const origin = originOf(tab?.getURL())
     if (!tab || !origin) return null
+    // The site's logins, wherever on it they were saved: a form in an embedded
+    // frame from another of the site's addresses is still this site's.
+    const shown = formFrames.get(tab.id)
+    const shownOrigin = shown && !shown.detached ? originOf(shown.url) : null
     return {
       origin,
-      count: credentialCount(origin),
+      count: credentialRows().filter((row) => sameSite(row.origin, origin)).length,
       vault: vaultState(),
-      accounts: credentialsFor(origin),
-      hasForm: formsSeen.get(tab.id) === origin
+      accounts: vaultUnlocked() ? listCredentials().filter((entry) => sameSite(entry.origin, origin)) : [],
+      hasForm: formsSeen.get(tab.id) === origin || Boolean(shownOrigin && sameSite(shownOrigin, origin))
     }
   })
 
@@ -310,7 +373,8 @@ export function registerVaultPageIpc(isPasswordsPage: (url: string | undefined) 
   const only =
     <A extends unknown[], R>(handler: (...args: A) => R) =>
     (event: Electron.IpcMainInvokeEvent, ...args: A): R | null =>
-      isPasswordsPage(event.senderFrame?.url) ? handler(...args) : null
+      // The page itself, never one framed inside a website.
+      event.senderFrame?.parent === null && isPasswordsPage(event.senderFrame.url) ? handler(...args) : null
 
   const wait = (ms?: number): string =>
     ms ? `Too many tries. Wait ${Math.ceil(ms / 1000)} seconds.` : 'That is not the master password.'

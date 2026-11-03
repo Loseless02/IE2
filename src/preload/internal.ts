@@ -24,13 +24,17 @@ import { watchAudio } from './audiofx'
  * independently verifies the sender's URL on every one of these channels.
  */
 // Websites get no API at all — only the password manager's form watcher,
-// which lives in this isolated world where the page cannot reach it.
+// which lives in this isolated world where the page cannot reach it. This runs
+// in embedded frames too: many sign-in forms live in one (Apple's does).
+const topFrame = window.top === window
 if (window.location.protocol === 'https:' || window.location.protocol === 'http:') {
   watchForLogins()
-  watchAudio()
+  if (topFrame) watchAudio()
 }
 
-if (window.location.protocol === 'ie2:') {
+// Our own pages, and only as the page itself: framed inside a website, an
+// ie2:// page gets nothing.
+if (window.location.protocol === 'ie2:' && topFrame) {
   const api = {
     /** Chromium and Electron versions, for the About section. */
     versions: {
