@@ -96,6 +96,7 @@ import {
   updateState
 } from './updater'
 import { closeSplash, focusSplash, showSplash } from './splash'
+import { clearPerformanceStats, performanceStats, recordStartup } from './performance'
 import { activeTheme } from '../shared/themes'
 import type { TabGroupColour } from '../shared/groups'
 import type { Settings } from '../shared/settings'
@@ -355,8 +356,9 @@ function createWindow(startUrl?: string, torn?: TornTab): void {
       if (!moved) shell.tabs.createTab()
       return
     }
-    if (startUrl) shell.tabs.createTab(startUrl)
-    else restoreSession(shell)
+    const tabs = startUrl ? (shell.tabs.createTab(startUrl), 1) : restoreSession(shell)
+    // The first window of a launch is ready to use: that is a start-up.
+    recordStartup(tabs)
   })
 
   // The chrome UI handles its own typing, but shortcuts are resolved centrally
@@ -389,8 +391,10 @@ function createWindow(startUrl?: string, torn?: TornTab): void {
   // check is cheap and the setting can change without anything to reschedule.
   const sleepTimer = setInterval(() => {
     const settings = getSettings()
-    if (!settings.sleepTabs) return
-    shell.tabs.sleepIdleTabs(Math.max(1, settings.sleepAfterMinutes))
+    // Performance mode sleeps idle tabs after ten minutes at most, whether or
+    // not sleeping is switched on.
+    if (settings.performanceMode) shell.tabs.sleepIdleTabs(Math.max(1, Math.min(10, settings.sleepAfterMinutes)))
+    else if (settings.sleepTabs) shell.tabs.sleepIdleTabs(Math.max(1, settings.sleepAfterMinutes))
   }, 60_000)
 
   win.on('closed', () => {
@@ -664,7 +668,8 @@ function registerAppBarIpc(): void {
   })
 }
 
-function restoreSession(shell: Shell): void {
+/** Brings the last session back into a window; returns how many tabs it opened. */
+function restoreSession(shell: Shell): number {
   const saved = loadSession()
   const pinned = saved.tabs.filter((tab) => tab.pinned)
 
@@ -673,12 +678,12 @@ function restoreSession(shell: Shell): void {
   if (getSettings().onStartup === 'newtab') {
     for (const tab of pinned) shell.tabs.createTab(tab.url, { activate: false, pinned: true })
     shell.tabs.createTab(getSettings().homePage)
-    return
+    return pinned.length + 1
   }
 
   if (saved.tabs.length === 0) {
     shell.tabs.createTab(HOME_URL)
-    return
+    return 1
   }
 
   // Groups first, so the tabs can be filed into them as they are created.
@@ -691,13 +696,20 @@ function restoreSession(shell: Shell): void {
     }))
   )
 
+  // Every tab but the one in front stays quiet until opened. In performance
+  // mode they are not even loaded until then.
+  const unloaded = getSettings().performanceMode
   saved.tabs.forEach((tab, i) =>
     shell.tabs.createTab(tab.url, {
       activate: i === saved.activeIndex,
       pinned: tab.pinned,
-      groupId: tab.groupId
+      groupId: tab.groupId,
+      restored: true,
+      unloaded,
+      title: tab.title
     })
   )
+  return saved.tabs.length
 }
 
 /**
@@ -1303,6 +1315,8 @@ function registerInternalIpc(): void {
   ipcMain.handle('internal:make-default', fromInternalPage(() => requestDefaultBrowser()))
 
   ipcMain.handle('internal:changelog', fromInternalPage(() => latestChanges()))
+  ipcMain.handle('internal:performance', fromInternalPage(() => performanceStats()))
+  ipcMain.handle('internal:performance-reset', fromInternalPage(() => clearPerformanceStats()))
   ipcMain.handle('internal:update-state', fromInternalPage(() => updateState()))
   ipcMain.handle('internal:update-check', fromInternalPage(() => check(true)))
   ipcMain.handle('internal:update-download', fromInternalPage(() => download()))
@@ -1946,7 +1960,13 @@ app.whenReady().then(async () => {
 
   // Installed extensions load before the first window, so its tabs get their
   // content scripts — but a slow disk does not hold the window up for long.
-  await Promise.race([initExtensions(), new Promise((resolve) => setTimeout(resolve, 1500))])
+  // Performance mode does not wait for them at all: the window comes first,
+  // and a page that loaded before an extension did misses its content script
+  // until reloaded.
+  const extensions = initExtensions().catch(() => undefined)
+  if (!getSettings().performanceMode) {
+    await Promise.race([extensions, new Promise((resolve) => setTimeout(resolve, 1500))])
+  }
 
   // Installed web app? Open just that window. Everything else is still set up,
   // because this process is now the browser too: opening IE2 while the app is

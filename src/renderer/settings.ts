@@ -1209,6 +1209,14 @@ const SECTIONS: Section[] = [
     build: () => [
       group(
         row(
+          'Performance mode',
+          'Start faster and hold less memory: tabs from last time load only when you open them, idle tabs sleep after 10 minutes, and the window does not wait for extensions. Takes effect from the next start. The figures below compare starts with it on and off.',
+          toggle('performanceMode')
+        )
+      ),
+      performanceGroup(),
+      group(
+        row(
           'Let idle tabs sleep',
           'A tab you have not looked at for a while has its page thrown away and its memory given back. The tab stays where it is and reloads when you return to it.',
           toggle('sleepTabs')
@@ -1573,6 +1581,89 @@ function statsGroup(): HTMLElement {
   }
 
   wrap.append(grid)
+  return wrap
+}
+
+/** 0.8 s, 12 s, 1 min 5 s: as precise as a start-up time is worth. */
+function duration(ms: number): string {
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)} s`
+  if (ms < 60_000) return `${Math.round(ms / 1000)} s`
+  return `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s`
+}
+
+/**
+ * How fast IE2 starts and how much memory it holds, measured on every launch,
+ * with performance mode on and off side by side — numbers to decide by.
+ */
+function performanceGroup(): HTMLElement {
+  const wrap = document.createElement('div')
+  wrap.className = 'group'
+
+  const fill = async (): Promise<void> => {
+    const stats = await window.ie2.performance()
+    wrap.replaceChildren()
+
+    const grid = document.createElement('div')
+    grid.className = 'stats'
+    const mode = (on: boolean): string => (on ? t('performance mode') : t('normal'))
+    const cards: [string, string][] = [
+      [stats.last ? duration(stats.last.ms) : '—', stats.last ? `${t('last start-up')}, ${mode(stats.last.performanceMode)}` : t('last start-up')],
+      [stats.fastest ? duration(stats.fastest.ms) : '—', t('fastest start-up')],
+      [stats.slowest ? duration(stats.slowest.ms) : '—', t('slowest start-up')],
+      [`${nf.format(stats.memoryNowMB)} MB`, t('memory in use now')]
+    ]
+    for (const [value, label] of cards) {
+      const card = document.createElement('div')
+      card.className = 'stat'
+      const b = document.createElement('b')
+      b.textContent = value
+      const span = document.createElement('span')
+      span.textContent = label
+      card.append(b, span)
+      grid.append(card)
+    }
+    wrap.append(grid)
+
+    // The comparison, one line per mode.
+    const side = (s: typeof stats.normal): string =>
+      s.starts === 0
+        ? t('No start-ups measured yet.')
+        : `${t('Starts in')} ${s.averageMs !== null ? duration(s.averageMs) : '—'} ${t('on average')}` +
+          (s.averageMemoryMB !== null ? `, ${nf.format(s.averageMemoryMB)} MB ${t('after 30 seconds')}` : '') +
+          ` · ${s.starts} ${s.starts === 1 ? t('start-up') : t('start-ups')}`
+    const text = (value: string): HTMLElement => {
+      const span = document.createElement('span')
+      span.className = 'static-value'
+      span.textContent = value
+      return span
+    }
+    wrap.append(
+      row('Normal', '', text(side(stats.normal))),
+      row('Performance mode', '', text(side(stats.performance))),
+      row(
+        'Last update',
+        'How long the last update took to install, from the update window.',
+        text(stats.lastUpdate ? `${duration(stats.lastUpdate.seconds * 1000)} · ${new Date(stats.lastUpdate.at).toLocaleDateString()}` : '—')
+      )
+    )
+
+    const reset = document.createElement('button')
+    reset.className = 'action'
+    reset.textContent = t('Start over')
+    reset.addEventListener('click', async () => {
+      await window.ie2.resetPerformance()
+      void fill()
+    })
+    wrap.append(
+      row(
+        'Measurements',
+        'Start-up is timed from the moment IE2 is launched until its window can be used. Memory is everything IE2 runs, as Task Manager counts it.',
+        reset
+      )
+    )
+  }
+
+  void fill()
   return wrap
 }
 

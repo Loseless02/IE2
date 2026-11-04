@@ -10,7 +10,8 @@ import type {
   VaultStatus,
   Credential,
   CredentialSummary,
-  UpdateState
+  UpdateState,
+  PerformanceStats
 } from '../shared/types'
 import type { Settings } from '../shared/settings'
 import { watchForLogins } from './passwords'
@@ -89,6 +90,10 @@ if (window.location.protocol === 'ie2:' && topFrame) {
     /** The newest section of the changelog that shipped with this build. */
     changelog: (): Promise<{ version: string; lines: string[] }> =>
       ipcRenderer.invoke('internal:changelog'),
+
+    /** Start-up times and memory, with and without performance mode. */
+    performance: (): Promise<PerformanceStats> => ipcRenderer.invoke('internal:performance'),
+    resetPerformance: (): Promise<void> => ipcRenderer.invoke('internal:performance-reset'),
 
     /** Updates from the project's GitHub releases. */
     updateState: (): Promise<UpdateState> => ipcRenderer.invoke('internal:update-state'),
@@ -219,6 +224,8 @@ export type InternalApi = {
   makeDefaultBrowser: () => Promise<boolean>
   readerArticle: () => Promise<ReaderArticle | null>
   changelog: () => Promise<{ version: string; lines: string[] }>
+  performance: () => Promise<PerformanceStats>
+  resetPerformance: () => Promise<void>
   updateState: () => Promise<UpdateState>
   checkForUpdate: () => Promise<UpdateState>
   downloadUpdate: () => Promise<void>

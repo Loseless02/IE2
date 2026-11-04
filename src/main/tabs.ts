@@ -136,6 +136,12 @@ export interface Tab {
   sleepingEntries: Electron.NavigationEntry[]
   /** Which entry was in view. */
   sleepingIndex: number
+  /**
+   * Restored at start-up and not opened since: it stays quiet — muted, and
+   * anything it starts playing is paused — until it is first opened. A video
+   * left open last time must not start talking from a tab nobody is looking at.
+   */
+  holdMedia: boolean
   /** When this tab was last looked at, for deciding what has gone stale. */
   lastActiveAt: number
   /**
@@ -163,6 +169,12 @@ export interface TabOptions {
   pinned?: boolean
   groupId?: number | null
   openerId?: number | null
+  /** Restored from the last session: kept quiet until first opened. */
+  restored?: boolean
+  /** Restore it without loading it, until it is first opened. Background tabs only. */
+  unloaded?: boolean
+  /** What to call it in the strip meanwhile. */
+  title?: string
 }
 
 export type Shortcut =
@@ -399,9 +411,11 @@ export class TabManager {
       sleepingTitle: '',
       sleepingEntries: [],
       sleepingIndex: 0,
+      holdMedia: Boolean(options.restored) && !activate,
       lastActiveAt: Date.now(),
       lastViewedAt: 0
     }
+    if (tab.holdMedia) view.webContents.setAudioMuted(true)
     // A link dropped between two tabs opens where it was dropped.
     if (options.index === undefined) this.tabs.push(tab)
     else this.tabs.splice(Math.max(0, Math.min(options.index, this.tabs.length)), 0, tab)
@@ -416,7 +430,16 @@ export class TabManager {
     this.window.contentView.addChildView(view)
     this.raiseChrome()
     view.setVisible(false)
-    view.webContents.loadURL(url)
+    // Restored without loading: the tab starts asleep, as if it had dozed off,
+    // and loads when it is first opened. Starting the browser then costs one
+    // page, not one per tab — and nothing behind the scenes starts playing.
+    if (options.unloaded && !activate) {
+      tab.asleep = true
+      tab.sleepingUrl = url
+      tab.sleepingTitle = options.title ?? ''
+    } else {
+      view.webContents.loadURL(url)
+    }
 
     // A brand new tab has nothing to read, so the caret belongs in the omnibox
     // rather than in the page.
@@ -517,6 +540,22 @@ export class TabManager {
 
     // Switching away from a fullscreen video ends its fullscreen.
     if (this.fullscreenId !== null && this.fullscreenId !== id) this.exitPageFullscreen()
+
+    // Opened at last: a restored tab may make sound now, and whatever it was
+    // stopped from playing carries on.
+    if (tab.holdMedia) {
+      tab.holdMedia = false
+      const wc = tab.view.webContents
+      wc.setAudioMuted(false)
+      if (!tab.asleep) {
+        void wc
+          .executeJavaScript(
+            `for (const m of document.querySelectorAll('video, audio')) if (m.__ie2Held) { m.__ie2Held = false; m.play().catch(() => {}) }`,
+            true
+          )
+          .catch(() => undefined)
+      }
+    }
 
     this.activeId = id
     tab.lastActiveAt = Date.now()
@@ -622,7 +661,7 @@ export class TabManager {
    * Amnesia tabs are excluded: restoring them would defeat the entire point.
    */
   snapshot(): {
-    tabs: { url: string; pinned: boolean; groupId: number | null }[]
+    tabs: { url: string; title: string; pinned: boolean; groupId: number | null }[]
     groups: TabGroup[]
     activeIndex: number
   } {
@@ -635,6 +674,7 @@ export class TabManager {
     return {
       tabs: keepers.map((tab) => ({
         url: this.urlOf(tab),
+        title: (tab.asleep ? tab.sleepingTitle : tab.view.webContents.getTitle()) || '',
         pinned: tab.pinned,
         groupId: tab.groupId
       })),
@@ -1361,6 +1401,19 @@ export class TabManager {
     // through the same steps as Ctrl+plus keeps the toolbar's level in step.
     wc.on('zoom-changed', (_event, direction) => {
       if (owner().activeId === tab.id) owner().onShortcut(direction === 'in' ? 'zoom-in' : 'zoom-out')
+    })
+
+    // A restored tab not yet opened starts playing: stop it. It is muted too,
+    // so a player that ignores the pause is still silent.
+    // Each one paused is marked, so opening the tab resumes exactly those.
+    wc.on('media-started-playing', () => {
+      if (!tab.holdMedia || wc.isDestroyed()) return
+      void wc
+        .executeJavaScript(
+          `for (const m of document.querySelectorAll('video, audio')) if (!m.paused) { m.pause(); m.__ie2Held = true }`,
+          true
+        )
+        .catch(() => undefined)
     })
 
     // A video player — or anything — going fullscreen, in the page itself or

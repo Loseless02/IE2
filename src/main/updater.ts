@@ -349,8 +349,10 @@ $form.FormBorderStyle = 'None'
 $form.StartPosition = 'CenterScreen'
 $form.ClientSize = New-Object Drawing.Size(380, 150)
 $form.BackColor = [Drawing.Color]::FromArgb(28, 28, 32)
-# Started from the background, Windows would not bring it to the front.
+# Started from the background, Windows would not bring it to the front — so it
+# starts on top, for a moment; see the timer.
 $form.TopMost = $true
+$form.ShowInTaskbar = $true
 $form.Icon = [Drawing.Icon]::ExtractAssociatedIcon($exe)
 $title = New-Object Windows.Forms.Label
 $title.Text = ${ps(`Updating IE2 to ${pending.version}`)}
@@ -369,7 +371,20 @@ $bar.Style = 'Marquee'
 $bar.MarqueeAnimationSpeed = 25
 $bar.Location = New-Object Drawing.Point(28, 106)
 $bar.Size = New-Object Drawing.Size(324, 6)
-$form.Controls.AddRange(@($title, $line, $bar))
+# It can be put away: the update carries on, and the taskbar brings it back.
+$minimize = New-Object Windows.Forms.Button
+$minimize.Text = '—'
+$minimize.FlatStyle = 'Flat'
+$minimize.FlatAppearance.BorderSize = 0
+$minimize.ForeColor = [Drawing.Color]::FromArgb(160, 160, 166)
+$minimize.BackColor = [Drawing.Color]::FromArgb(28, 28, 32)
+$minimize.Font = New-Object Drawing.Font('Segoe UI', 10)
+$minimize.Size = New-Object Drawing.Size(36, 28)
+$minimize.Location = New-Object Drawing.Point(338, 6)
+$minimize.TabStop = $false
+$minimize.AccessibleName = 'Minimize'
+$minimize.Add_Click({ $form.WindowState = 'Minimized' })
+$form.Controls.AddRange(@($title, $line, $bar, $minimize))
 # Started hidden (no console flash), and Windows applies that to the first
 # window this process shows. Let a throwaway one take it.
 $first = New-Object Windows.Forms.Form
@@ -394,6 +409,8 @@ $timer = New-Object Windows.Forms.Timer
 $timer.Interval = 300
 $timer.Add_Tick({
   $now = Get-Date
+  # In front when it appears, then an ordinary window that others can cover.
+  if ($form.TopMost -and ($now - $state.started).TotalSeconds -gt 2) { $form.TopMost = $false }
   if (-not $state.proc) {
     # The browser first finishes closing, so the installer never has to kill it.
     $open = Get-Process -Name $name | Where-Object { $_.Path -eq $exe }

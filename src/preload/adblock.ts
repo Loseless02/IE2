@@ -67,12 +67,13 @@ if (window.location.protocol !== 'ie2:' && window.location.protocol !== 'devtool
  * itself over and over. Measured with current lists, removing the ads costs a
  * few seconds' start-up; when it costs more than that, something is broken.
  *
- * So: a video still on the spinner after 15 visible seconds, with no ad
- * playing, gets its page reloaded once. Still stuck, it is reloaded once more
- * without the YouTube scriptlets — network blocking stays on — because a video
- * that plays, possibly after an ad, beats one that never does.
+ * So: a video still on the spinner after 12 visible seconds, with no ad
+ * playing, is reloaded once without the YouTube scriptlets — network blocking
+ * stays on — because a video that plays, possibly after an ad, beats one that
+ * never does. A plain reload first was tried, and measured: it never once got
+ * a stuck video going, so it only added fifteen seconds of spinner.
  */
-const STALL_MS = 15_000
+const STALL_MS = 12_000
 const RESCUE_KEY = 'ie2-youtube-rescue'
 /** A rescue counts for this long; after that the same video starts afresh. */
 const RESCUE_MEMORY_MS = 2 * 60_000
@@ -82,7 +83,7 @@ function watchYouTubeStalls(): void {
   let stuckFor = 0
   let last = Date.now()
 
-  const rescued = (): { href: string; stage: number; at: number } | null => {
+  const rescued = (): { href: string; at: number } | null => {
     try {
       const value = JSON.parse(sessionStorage.getItem(RESCUE_KEY) ?? 'null')
       return value && value.href === href && Date.now() - value.at < RESCUE_MEMORY_MS ? value : null
@@ -113,16 +114,12 @@ function watchYouTubeStalls(): void {
     if (stuckFor < STALL_MS) return
     stuckFor = 0
 
-    const before = rescued()
-    if (before && before.stage >= 2) return
-    const stage = before ? 2 : 1
+    // Once per video: if it is stuck even without them, reloading again will
+    // not help either.
+    if (rescued()) return
     try {
-      sessionStorage.setItem(RESCUE_KEY, JSON.stringify({ href, stage, at: now }))
+      sessionStorage.setItem(RESCUE_KEY, JSON.stringify({ href, at: now }))
     } catch {
-      return
-    }
-    if (stage === 1) {
-      window.location.reload()
       return
     }
     void ipcRenderer.invoke('adblock:skip-scriptlets-once').finally(() => window.location.reload())

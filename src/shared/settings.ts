@@ -204,6 +204,15 @@ export interface Settings {
   sleepAfterMinutes: number
 
   /**
+   * Performance mode: start faster and hold less memory. Restored tabs load
+   * only when opened, idle tabs sleep after 10 minutes whatever the setting
+   * above says, and the first window does not wait for extensions. Off by
+   * default, so its effect can be measured against the ordinary behaviour —
+   * see the start-up figures in Settings → Performance.
+   */
+  performanceMode: boolean
+
+  /**
    * Check the project's GitHub releases for a newer version on start-up. Only
    * version numbers are compared; nothing about the user is sent. Off means the
    * check only happens when the button in Settings is pressed.
@@ -321,6 +330,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
   sleepTabs: true,
   sleepAfterMinutes: 30,
+  performanceMode: false,
 
   autoUpdate: true,
   lastSeenVersion: '',

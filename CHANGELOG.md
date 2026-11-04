@@ -4,6 +4,25 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.10
+
+- Tabs from last time stay quiet until you open them: a video left open in a
+  background tab no longer starts playing on its own, and carries on when you
+  go to it
+- Performance mode, in Settings → Performance: tabs from last time load only
+  when you open them, idle tabs sleep after 10 minutes, and the window does
+  not wait for extensions. With ten tabs restored, IE2 held about half the
+  memory half a minute after starting
+- Settings → Performance measures every start: the last, fastest and slowest
+  start-up, memory in use, the average with performance mode on and off side
+  by side, and how long the last update took
+- The update window can be minimized, and no longer stays on top of
+  everything while it works
+- A YouTube video stuck on its loading circle is rescued sooner: after 12
+  seconds it reloads once without the ad blocker's YouTube scripts, which is
+  what gets it playing (sometimes after an ad)
+- Ad blocker updated to the latest version of its engine
+
 ## 0.10.9
 
 - The update window says how long is left — "about 30 seconds left" — timed

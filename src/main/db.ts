@@ -134,6 +134,10 @@ function migrate(): void {
   if (!session.some((c) => c.name === 'group_id')) {
     db.exec('ALTER TABLE session_tabs ADD COLUMN group_id INTEGER')
   }
+  // Titles came later still: a tab restored without loading shows its title.
+  if (!session.some((c) => c.name === 'title')) {
+    db.exec("ALTER TABLE session_tabs ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+  }
 }
 
 /**
@@ -747,6 +751,7 @@ export function listBookmarks(): BookmarkEntry[] {
 
 export interface SessionTab {
   url: string
+  title: string
   pinned: boolean
   groupId: number | null
 }
@@ -766,10 +771,10 @@ export function saveSession(
   db.exec('DELETE FROM tab_groups')
 
   const insert = db.prepare(
-    'INSERT INTO session_tabs (position, url, active, pinned, group_id) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO session_tabs (position, url, title, active, pinned, group_id) VALUES (?, ?, ?, ?, ?, ?)'
   )
   tabs.forEach((tab, i) =>
-    insert.run(i, tab.url, i === activeIndex ? 1 : 0, tab.pinned ? 1 : 0, tab.groupId)
+    insert.run(i, tab.url, tab.title, i === activeIndex ? 1 : 0, tab.pinned ? 1 : 0, tab.groupId)
   )
 
   const insertGroup = db.prepare(
@@ -784,9 +789,10 @@ export function loadSession(): {
   activeIndex: number
 } {
   const rows = db
-    .prepare('SELECT url, active, pinned, group_id AS groupId FROM session_tabs ORDER BY position')
+    .prepare('SELECT url, title, active, pinned, group_id AS groupId FROM session_tabs ORDER BY position')
     .all() as unknown as {
     url: string
+    title: string
     active: number
     pinned: number
     groupId: number | null
@@ -799,6 +805,7 @@ export function loadSession(): {
   return {
     tabs: rows.map((row) => ({
       url: row.url,
+      title: row.title ?? '',
       pinned: row.pinned === 1,
       groupId: row.groupId
     })),

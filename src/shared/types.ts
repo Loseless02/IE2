@@ -238,6 +238,30 @@ export interface RecallStats {
   bookmarks: number
 }
 
+/** One launch of the browser, as measured. */
+export interface StartupRecord {
+  at: number
+  /** From the process starting to the first window being usable. */
+  ms: number
+  performanceMode: boolean
+  /** Tabs it came back with. */
+  tabs: number
+  version: string
+  /** Memory in use half a minute in, once it had settled. */
+  memoryMB?: number
+}
+
+/** Settings → Performance: how start-up and memory compare, with and without performance mode. */
+export interface PerformanceStats {
+  last: StartupRecord | null
+  fastest: StartupRecord | null
+  slowest: StartupRecord | null
+  normal: { starts: number; averageMs: number | null; averageMemoryMB: number | null }
+  performance: { starts: number; averageMs: number | null; averageMemoryMB: number | null }
+  memoryNowMB: number
+  lastUpdate: { seconds: number; at: number } | null
+}
+
 /** What the updater is doing, as the interface needs to show it. */
 export interface UpdateState {
   status:
