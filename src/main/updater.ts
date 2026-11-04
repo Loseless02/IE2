@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -205,6 +205,8 @@ export function installNow(): void {
 interface Applying {
   version: string
   at: number
+  /** The installer's file name, to find it among running processes. */
+  installer?: string
 }
 
 const markerPath = (): string => join(app.getPath('userData'), 'update-applying.json')
@@ -220,6 +222,63 @@ function readMarker(): Applying | null {
 
 function removeMarker(): void {
   rmSync(markerPath(), { force: true })
+}
+
+/**
+ * A version not to apply by itself at launch, until when: its last attempt
+ * failed. Restart to update in Settings still tries it — that is someone
+ * asking — but a launch must never walk into the same failure again.
+ */
+const skipPath = (): string => join(app.getPath('userData'), 'update-skip.json')
+const RETRY_AFTER_MS = 6 * 60 * 60_000
+
+function skipping(version: string): boolean {
+  try {
+    const value = JSON.parse(readFileSync(skipPath(), 'utf8')) as { version?: string; until?: number }
+    return value.version === version && typeof value.until === 'number' && value.until > Date.now()
+  } catch {
+    return false
+  }
+}
+
+function skip(version: string): void {
+  try {
+    writeFileSync(skipPath(), JSON.stringify({ version, until: Date.now() + RETRY_AFTER_MS }))
+  } catch {
+    // Then it is simply tried again.
+  }
+}
+
+/**
+ * How long the last update took to install here, which is the best guess at
+ * how long the next one will: the "Updating" window counts it down. It
+ * depends on the disk and on how long Windows looks at a new installer, so it
+ * is measured rather than assumed — 45 seconds until there is a measurement.
+ */
+const timingPath = (): string => join(app.getPath('userData'), 'update-timing.json')
+
+function installEstimate(): number {
+  try {
+    const { seconds } = JSON.parse(readFileSync(timingPath(), 'utf8')) as { seconds?: number }
+    if (typeof seconds === 'number' && seconds > 0) return Math.round(Math.min(300, Math.max(15, seconds)))
+  } catch {
+    // No measurement yet.
+  }
+  return 45
+}
+
+/** Whether a process with this file name is running right now. */
+function running(name: string): boolean {
+  try {
+    const out = execFileSync('tasklist', ['/fi', `IMAGENAME eq ${name}`, '/fo', 'csv', '/nh'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 4000
+    })
+    return out.toLowerCase().includes(`"${name.toLowerCase()}"`)
+  } catch {
+    return false
+  }
 }
 
 /** a is a later version than b. */
@@ -267,7 +326,10 @@ const ps = (text: string): string => `'${text.replace(/'/g, "''")}'`
 
 /** Resolves once the helper is running on its own, and IE2 may go. */
 function runInstaller(pending: { file: string; version: string }): Promise<void> {
-  writeFileSync(markerPath(), JSON.stringify({ version: pending.version, at: Date.now() } satisfies Applying))
+  writeFileSync(
+    markerPath(),
+    JSON.stringify({ version: pending.version, at: Date.now(), installer: basename(pending.file) } satisfies Applying)
+  )
 
   const exe = process.execPath
   const script = `
@@ -275,6 +337,10 @@ $ErrorActionPreference = 'SilentlyContinue'
 $installer = ${ps(pending.file)}
 $exe = ${ps(exe)}
 $marker = ${ps(markerPath())}
+$skip = ${ps(skipPath())}
+$skipJson = ${ps(JSON.stringify({ version: pending.version, until: Date.now() + RETRY_AFTER_MS }))}
+$timing = ${ps(timingPath())}
+$estimate = ${installEstimate()}
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
 $form = New-Object Windows.Forms.Form
@@ -293,7 +359,7 @@ $title.Font = New-Object Drawing.Font('Segoe UI', 15)
 $title.AutoSize = $true
 $title.Location = New-Object Drawing.Point(24, 30)
 $line = New-Object Windows.Forms.Label
-$line.Text = 'Applying the update. IE2 opens again by itself.'
+$line.Text = 'Waiting for IE2 to close…'
 $line.ForeColor = [Drawing.Color]::FromArgb(160, 160, 166)
 $line.Font = New-Object Drawing.Font('Segoe UI', 10)
 $line.AutoSize = $true
@@ -310,23 +376,68 @@ $first = New-Object Windows.Forms.Form
 $first.ShowInTaskbar = $false
 $first.Show()
 $first.Close()
-$state = @{ proc = $null; started = Get-Date; exited = $null }
+$state = @{ proc = $null; started = Get-Date; exited = $null; cpu = -1; still = $null }
+$name = ${ps(basename(exe, '.exe'))}
+# Whatever happens to the update, IE2 has to open again: the new version if it
+# got installed, the old one if not.
+$reopen = {
+  $open = Get-Process -Name $name | Where-Object { $_.Path -eq $exe }
+  if (-not $open) { Start-Process -FilePath $exe }
+}
+$giveUp = {
+  [IO.File]::WriteAllText($skip, $skipJson)
+  Remove-Item -LiteralPath $marker -Force
+  & $reopen
+  $timer.Stop(); $form.Close()
+}
 $timer = New-Object Windows.Forms.Timer
 $timer.Interval = 300
 $timer.Add_Tick({
   $now = Get-Date
   if (-not $state.proc) {
     # The browser first finishes closing, so the installer never has to kill it.
-    $open = Get-Process -Name ${ps(basename(exe, '.exe'))} | Where-Object { $_.Path -eq $exe }
+    $open = Get-Process -Name $name | Where-Object { $_.Path -eq $exe }
     if ($open -and ($now - $state.started).TotalSeconds -lt 20) { return }
     $state.proc = Start-Process -FilePath $installer -ArgumentList '--updated', '/S', '--force-run' -PassThru
+    $state.still = $now
+    if (-not $state.proc) { & $giveUp; return }
+    # From here the bar fills against how long the last install took.
+    $bar.Style = 'Continuous'
+    $bar.Maximum = 1000
+    $bar.Value = 0
     return
   }
-  if ($state.proc.HasExited -and -not $state.exited) { $state.exited = $now }
   # The new version removes the marker once its window is up.
-  $done = -not (Test-Path -LiteralPath $marker)
-  $late = $state.exited -and ($now - $state.exited).TotalSeconds -gt 60
-  if ($done -or $late -or ($now - $state.started).TotalMinutes -gt 5) { $timer.Stop(); $form.Close() }
+  if (-not (Test-Path -LiteralPath $marker)) { $timer.Stop(); $form.Close(); return }
+  if ($state.proc.HasExited) {
+    if (-not $state.exited) {
+      $state.exited = $now
+      $bar.Value = 1000
+      $line.Text = 'Starting IE2…'
+      # How long this one took, for the next update's estimate.
+      $took = [Math]::Round(($now - $state.proc.StartTime).TotalSeconds)
+      if ($state.proc.ExitCode -eq 0) { [IO.File]::WriteAllText($timing, "{""seconds"":$took}") }
+    }
+    # Installed, but nothing opened: open it.
+    if (($now - $state.exited).TotalSeconds -gt 45) { & $giveUp }
+    return
+  }
+  # The installer reports nothing, so the time left is an estimate: the last
+  # install's length, counted down, and never below "almost done".
+  $elapsed = ($now - $state.proc.StartTime).TotalSeconds
+  $left = [Math]::Ceiling($estimate - $elapsed)
+  $line.Text = if ($left -gt 3) { "Installing — about $left seconds left" } else { 'Almost done…' }
+  $bar.Value = [Math]::Min(950, [Math]::Max(0, [int]($elapsed / $estimate * 1000)))
+  # An installer using no processor time at all for a minute is frozen — held
+  # by something outside it — and has not started on IE2's files. Stop it and
+  # give the current version back rather than wait for ever.
+  $state.proc.Refresh()
+  $cpu = $state.proc.TotalProcessorTime.TotalMilliseconds
+  if ($cpu -ne $state.cpu) { $state.cpu = $cpu; $state.still = $now; return }
+  if (($now - $state.still).TotalSeconds -gt 60) {
+    Stop-Process -Id $state.proc.Id -Force
+    & $giveUp
+  }
 })
 # Not tied to the window being shown: the update goes ahead even if it is not.
 $timer.Start()
@@ -363,12 +474,19 @@ export function updateInProgress(): boolean {
   if (IS_DEV_COPY || !canSelfUpdate()) return false
   const marker = readMarker()
   if (!marker || !newer(marker.version, app.getVersion())) return false
-  if (Date.now() - marker.at < 5 * 60_000) return true
 
-  // Long gone and still not updated: that install failed. Forget it, and the
-  // installer with it, rather than retry the same failure at every launch.
+  // The first seconds the "Updating" window spends waiting for IE2 to close,
+  // before it starts the installer; after that, only while the installer is
+  // really running. A marker on its own is not enough — trusting one left
+  // behind by a stuck installer kept IE2 from opening at all.
+  const age = Date.now() - marker.at
+  const installer = marker.installer ?? `IE2-Setup-${marker.version}.exe`
+  if (age < 30_000 || (age < 15 * 60_000 && running(installer))) return true
+
+  // That install went nowhere. Forget it, and do not walk into it again at
+  // every launch; Restart to update can still try it.
   removeMarker()
-  rmSync(pendingDir(), { recursive: true, force: true })
+  skip(marker.version)
   return false
 }
 
@@ -381,7 +499,7 @@ export function updateInProgress(): boolean {
 export function applyPendingUpdate(): Promise<void> | null {
   if (IS_DEV_COPY || !canSelfUpdate()) return null
   const pending = pendingInstaller()
-  return pending ? runInstaller(pending) : null
+  return pending && !skipping(pending.version) ? runInstaller(pending) : null
 }
 
 /**

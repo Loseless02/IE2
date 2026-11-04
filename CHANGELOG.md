@@ -4,6 +4,15 @@ The newest version goes at the top. The browser reads the first section of this
 file to show "what's new" once after an update, so keep the heading format —
 `## <version>` — exactly as it is here.
 
+## 0.10.9
+
+- The update window says how long is left — "about 30 seconds left" — timed
+  from how long the last update took on this computer
+- Fixed: an update installer that froze left IE2 unable to open at all, with
+  no message. A frozen installer is now stopped after a minute, IE2 opens again
+  as it was, and the update waits until you choose Restart to update
+- IE2 always opens again after an update, whether it went in or not
+
 ## 0.10.8
 
 - A YouTube video stuck on its loading circle gets itself going: after 15
